@@ -1,5 +1,15 @@
 # Contributing
 
+## Working agreements
+
+- Branch, open one PR against `main`, and leave it for the owner. Never commit or push to `main`; never merge your own PR.
+- Conventional Commits; squash merge.
+- Run `npm run verify` before handoff. Add focused tests for the behavior you touched — CI owns the full suite.
+- Changes touching the published CLI need a patch Changeset; no minor or major bumps before 1.0.0.
+- Editing a workspace's dependencies means updating the allow-list in `scripts/workspace-boundary.mjs`; the boundary check fails otherwise.
+- Don't add registry credentials or publishing switches in a feature change.
+- Every change under `apps/cli/**` trips CI's Changeset gate, even documentation-only ones.
+
 ## Changesets
 
 User-facing changes to the public `@abijith-suresh/planview` package need a
@@ -15,6 +25,8 @@ and the private workspace is named
 `planview-workspace`.
 
 ## Effect v4 and module boundaries
+
+**Trap:** `@planview/core` performs no filesystem, network, or cloud I/O. It resolves paths and holds shared document policy; every side effect belongs to the owning adapter.
 
 - Keep shared local-document invariants and types in `@planview/core`; keep
   app-specific authorization, routing, and cloud policy in their owning
@@ -77,7 +89,7 @@ npm run changeset:status
 npm run pack:check
 ```
 
-`npm run verify` runs the release-policy check. The same check runs before
+The same release-policy check runs before
 `npm run version-packages` and `npm run release`, so a pre-1.0.0 minor or major
 `@abijith-suresh/planview` Changeset cannot be versioned or published accidentally.
 
