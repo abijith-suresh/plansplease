@@ -11,6 +11,7 @@ import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import schema from "./betterAuth/schema";
+import { isLocalDevelopment } from "./localMode";
 import { preserveConvexEndpoints } from "./pluginEndpoints";
 
 const githubClientId = process.env["GITHUB_CLIENT_ID"];
@@ -68,6 +69,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     trustedOrigins,
     database: authComponent.adapter(ctx),
     socialProviders,
+    emailAndPassword: { enabled: isLocalDevelopment(process.env), minPasswordLength: 12 },
     plugins: [
       convexAuthPlugin,
       // Existing signing keys are RSA. Pin the algorithm so keys created

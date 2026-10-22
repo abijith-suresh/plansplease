@@ -1,5 +1,5 @@
 import type { DocumentStorageAdapter } from "./document-storage.js";
-import { documentPreviewResponse } from "./document-preview.ts";
+import { documentPreviewResponse, localDocumentPreviewResponse } from "./document-preview.ts";
 
 export type DocumentAccessRecord = Readonly<{
   readonly contentType: string;
@@ -58,10 +58,11 @@ export function createDocumentPreviewHandler<Client>(
       }
       if (document.storageProvider && document.storageKey) {
         const storage = dependencies.getDocumentStorage(document.storageProvider);
-        return documentPreviewResponse(
-          await storage.getReadUrl(document.storageKey),
-          document.title
-        );
+        const preview =
+          document.storageProvider === "filesystem"
+            ? localDocumentPreviewResponse
+            : documentPreviewResponse;
+        return preview(await storage.getReadUrl(document.storageKey), document.title);
       }
 
       if (!dependencies.convexSiteUrl) {

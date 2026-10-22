@@ -17,6 +17,7 @@ import type * as documentDeletionStorage from "../documentDeletionStorage.js";
 import type * as documentProof from "../documentProof.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
+import type * as localMode from "../localMode.js";
 import type * as mcpDocuments from "../mcpDocuments.js";
 import type * as mcpProof from "../mcpProof.js";
 import type * as pluginEndpoints from "../pluginEndpoints.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   documentProof: typeof documentProof;
   documents: typeof documents;
   http: typeof http;
+  localMode: typeof localMode;
   mcpDocuments: typeof mcpDocuments;
   mcpProof: typeof mcpProof;
   pluginEndpoints: typeof pluginEndpoints;

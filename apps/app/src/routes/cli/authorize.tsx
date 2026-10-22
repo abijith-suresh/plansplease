@@ -59,7 +59,7 @@ export default function AuthorizeCli() {
       return;
     }
     const returnTo = `${window.location.pathname}${window.location.search}`;
-    window.location.replace(`/auth/github?returnTo=${encodeURIComponent(returnTo)}`);
+    window.location.replace(`/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
   });
 
   const authorize = async () => {

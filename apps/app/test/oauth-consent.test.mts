@@ -18,6 +18,6 @@ test("keeps the agent login redirect on the browser's origin", () => {
   assert.equal(response.status, 302);
   assert.equal(
     response.headers.get("location"),
-    "/auth/github?oauth_query=client_id%3Dagent%26sig%3Dsigned"
+    "/auth/login?oauth_query=client_id%3Dagent%26sig%3Dsigned"
   );
 });

@@ -29,6 +29,7 @@ export default defineSchema({
     ownerId: v.string(),
     title: v.string(),
     storageKey: v.string(),
+    storageProvider: v.optional(v.string()),
     sizeBytes: v.number(),
     uploadDeadlineAt: v.number(),
     nextAttemptAt: v.number(),
@@ -41,6 +42,7 @@ export default defineSchema({
   deletionJobs: defineTable({
     documentId: v.id("documents"),
     storageKey: v.string(),
+    storageProvider: v.optional(v.string()),
     nextAttemptAt: v.number(),
     attempts: v.number(),
   }).index("by_nextAttemptAt", ["nextAttemptAt"]),

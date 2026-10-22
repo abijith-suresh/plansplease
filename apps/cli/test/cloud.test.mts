@@ -196,7 +196,7 @@ test("cloud login callback and upload preserve the local protocol", async () => 
         openBrowser: async (signInUrl) => {
           const signIn = new URL(signInUrl);
           assert.equal(signIn.origin, cloudUrl);
-          assert.equal(signIn.pathname, "/auth/github");
+          assert.equal(signIn.pathname, "/auth/login");
 
           const returnToValue = signIn.searchParams.get("returnTo");
           assert.ok(returnToValue);

@@ -23,7 +23,7 @@ export default function ConsentMcp() {
     if (hasAuthAttemptCookie(document.cookie)) {
       window.location.replace("/auth/problem?mcp=1");
     } else {
-      window.location.replace(`/auth/github?oauth_query=${encodeURIComponent(query())}`);
+      window.location.replace(`/auth/login?oauth_query=${encodeURIComponent(query())}`);
     }
   });
 

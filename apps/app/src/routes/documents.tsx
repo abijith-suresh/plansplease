@@ -2,6 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 
 import AppShell from "~/components/AppShell";
+import DocumentUpload from "~/components/DocumentUpload";
 import DocumentActions from "~/components/DocumentActions";
 import { docsUrl } from "~/lib/docs-url";
 import Icon from "~/components/Icon";
@@ -184,6 +185,11 @@ export default function Documents() {
             />
           </header>
 
+          <DocumentUpload
+            onUploaded={(title) => showActionMessage(`${title} uploaded.`)}
+            onUnauthorized={redirectToSignIn}
+          />
+
           <section class="documents-list" aria-labelledby="documents-list-title">
             <div class="list-header">
               <h2 id="documents-list-title">All documents</h2>
@@ -206,7 +212,7 @@ export default function Documents() {
                         <Icon name="file" size={24} />
                       </span>
                       <h2>No documents yet</h2>
-                      <p>Connect your agent to save your first HTML page.</p>
+                      <p>Upload an HTML page or connect your agent to save one.</p>
                       <div class="empty-actions">
                         <a class="button-primary" href={docsUrl("getting-started/")}>
                           Connect your agent

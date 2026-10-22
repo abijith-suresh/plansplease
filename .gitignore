@@ -11,3 +11,6 @@ npm-debug.log*
 !.env.example
 .DS_Store
 .vercel
+
+# Generated local workspace, backend state, and development secrets
+.planview-local/

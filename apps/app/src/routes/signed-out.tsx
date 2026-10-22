@@ -1,7 +1,5 @@
 import { Meta, Title } from "@solidjs/meta";
 
-import Icon from "~/components/Icon";
-
 export default function SignedOut() {
   return (
     <main class="panel-page">
@@ -11,9 +9,8 @@ export default function SignedOut() {
       <h1>You're signed out.</h1>
       <p class="panel-lede">Return to your workspace whenever you are ready.</p>
       <div class="panel-actions">
-        <a class="button-primary" href="/auth/github">
-          <Icon name="github" size={16} />
-          <span>Sign in with GitHub</span>
+        <a class="button-primary" href="/auth/login">
+          <span>Sign in</span>
         </a>
       </div>
     </main>

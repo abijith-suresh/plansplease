@@ -10,12 +10,17 @@ const normalizeBasePath = (value: string | undefined) => {
 // biome-ignore lint/complexity/useLiteralKeys: Astro's environment type uses an index signature.
 const base = normalizeBasePath(process.env["BASE_PATH"]);
 const environment = {
-  ...loadEnv(process.env["NODE_ENV"] ?? "production", process.cwd(), "PUBLIC_"),
+  ...loadEnv(
+    process.env["NODE_ENV"] ?? "production",
+    process.env["PLANVIEW_ENV_DIR"] ?? process.cwd(),
+    "PUBLIC_"
+  ),
   ...process.env,
 };
 
 export default defineConfig({
   output: "static",
+  vite: { envDir: process.env["PLANVIEW_ENV_DIR"] ?? process.cwd() },
   site: readSiteOrigin(environment["PUBLIC_SITE_URL"]),
   base,
 });

@@ -6,6 +6,17 @@ existing `planview` scripts need updating. Profiles, documents, credentials and 
 state retain their locations. Package names,
 local data paths, `PLANVIEW_*` settings and installed skill directories remain compatible.
 
+## Full local workspace
+
+After `npm ci`, run `npm run local`. Open http://127.0.0.1:3000 and create a local
+test account. The command runs the real app, anonymous local Convex backend,
+filesystem document storage, marketing site, and docs without paid hosting or
+provider accounts. Data survives Ctrl-C and restart.
+
+See [the local development guide](apps/docs/src/content/docs/reference/development.mdx#full-local-workspace) for browser uploads, CLI
+login/upload/logout, authenticated MCP, source watching, and explicit reset.
+Existing `.env.local` files and hosted deployments are left alone.
+
 ## Bootstrap status
 
 The foundation includes the public `@abijith-suresh/planview` npm workspace and the

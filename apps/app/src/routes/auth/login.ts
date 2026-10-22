@@ -1,7 +1,9 @@
-const signInLocation = new URL("/", "http://localhost").pathname;
+import { isLocalDevelopment } from "../../../convex/localMode";
 
-export const GET = () =>
-  new Response(null, {
+export const GET = ({ request }: { request: Request }) => {
+  const query = new URL(request.url).search;
+  return new Response(null, {
     status: 302,
-    headers: { Location: signInLocation },
+    headers: { Location: `${isLocalDevelopment(process.env) ? "/" : "/auth/github"}${query}` },
   });
+};
