@@ -13,7 +13,7 @@ test account. The command runs the real app, anonymous local Convex backend,
 filesystem document storage, marketing site, and docs without paid hosting or
 provider accounts. Data survives Ctrl-C and restart.
 
-See [the local development guide](LOCAL_DEVELOPMENT.md) for browser uploads, CLI
+See [the local development guide](apps/docs/src/content/docs/reference/development.mdx#full-local-workspace) for browser uploads, CLI
 login/upload/logout, authenticated MCP, source watching, and explicit reset.
 Existing `.env.local` files and hosted deployments are left alone.
 

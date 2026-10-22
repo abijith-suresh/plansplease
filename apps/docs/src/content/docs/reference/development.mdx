@@ -22,37 +22,86 @@ disabled until maintainers explicitly enable it.
 
 ## Full local workspace
 
-After `npm ci`, run `npm run local` from the repository root. Open
-`http://127.0.0.1:3000` and create a local test account. The command starts the real
-browser app, anonymous local Convex backend, filesystem storage, marketing site
-on port 4300, and docs on port 4301. Accounts, sessions, metadata, and document
-bytes persist in the ignored `.planview-local/` directory across restarts.
+From the repository root, run:
 
-The app has an **Upload document** control with file selection and drag and drop.
-CLI login uses the same account:
+```sh
+npm ci
+npm run local
+```
+
+Open `http://127.0.0.1:3000` and choose **Create a local test account**. Use a test
+email and a password of at least 12 characters. These are real Better Auth
+accounts in an anonymous local Convex backend; no email is sent. GitHub, Convex
+accounts, UploadThing credentials, and paid hosting are unnecessary for local
+testing. The first run downloads the backend binary and needs internet access.
+
+The app runs on port 3000, marketing on 4300, docs on 4301, and Convex on 3210
+and 3211. Use the exact `127.0.0.1` origins. All services bind to loopback and
+startup refuses occupied ports. Keep the terminal open; Ctrl-C stops the services
+and preserves accounts, sessions, metadata, and bytes across restarts.
+
+### Browser uploads
+
+On Documents, choose **Upload document**. Drop one `.html` file or use the file
+picker, edit the title, and choose **Save document**. You can also select a
+`.planview` artifact bundle. Uploads share the hosted 8 MiB limit and account quota.
+Use the CLI to upload a folder. Open a document title for its sandboxed preview;
+its actions menu provides deletion. Background deletion removes stored bytes and
+releases quota, and can wait until the next restart if the app is stopped.
+
+### CLI and MCP
+
+Startup builds the CLI. In another terminal, use a separate profile:
 
 ```sh
 node apps/cli/dist/index.js --profile local-dev login --cloud-url http://127.0.0.1:3000
 node apps/cli/dist/index.js --profile local-dev upload ./example.html
+node apps/cli/dist/index.js --profile local-dev upload ./artifact-folder/
 node apps/cli/dist/index.js --profile local-dev logout
 ```
 
-HTTP MCP clients connect to `http://127.0.0.1:3000/mcp` and complete real OAuth
-with the local account. Native clients can register loopback callbacks and use
-PKCE. No GitHub, Convex account, UploadThing token, or paid hosting is required.
-The first run downloads the local backend binary. The runner isolates its env
-and deployment selection from existing `.env.local` files and cloud credentials.
+Login opens a browser for local sign-in and **Authorize local CLI**. Configure
+an OS browser opener such as `xdg-open` if your terminal cannot open one. Uploads
+use the destination saved at login. Choose another profile name if `local-dev`
+is already in use. The separate `publish` command still serves daemon snapshots
+without an app account.
 
-Ctrl-C stops the services and keeps data. To delete this checkout's local dataset,
-stop the runner and explicitly run:
+HTTP MCP clients connect to `http://127.0.0.1:3000/mcp` and complete OAuth using
+the local account. Native clients registering an HTTP loopback callback must use
+`application_type: "native"`, `token_endpoint_auth_method: "none"`, and PKCE S256.
+Discovery is at `http://127.0.0.1:3000/.well-known/oauth-authorization-server`.
+CLI upload credentials cannot be used as MCP access tokens.
+
+### Data and development
+
+The ignored `.planview-local/` directory contains the backend database, immutable
+filesystem objects, generated development secrets, and isolated environment
+configuration. Back it up while stopped to preserve the dataset. The runner does
+not load or overwrite existing source `.env.local` files or select a cloud backend.
+Do not start a separate `npx convex dev` in `apps/app` for this workflow.
+
+App, site, and docs edits reload normally. Authored Convex sources are mirrored
+into the isolated backend, including additions, renames, and deletions. Generated
+API bindings sync back into `apps/app/convex/**/_generated/` so frontend types
+follow backend changes. Review those binding changes alongside your code. Restart
+after editing the runner itself.
+
+### Reset explicitly
+
+Log out the local CLI profile while the stack is running, then stop the runner:
 
 ```sh
+node apps/cli/dist/index.js --profile local-dev logout
+# Stop npm run local with Ctrl-C, then:
 npm run local:reset -- --yes
+npm run local
 ```
 
-See the repository's [full local development guide](https://github.com/abijith-suresh/planview/blob/main/LOCAL_DEVELOPMENT.md)
-for reset boundaries, source watching, browser preview safeguards, and acceptance
-checks. These development services are intended for loopback use on this computer.
+Reset refuses to run while the runner is active. It permanently deletes this
+checkout's local accounts, sessions, document metadata and bytes, and generated
+secrets. It preserves other CLI profiles, daemon snapshots, the shared Convex
+binary cache, and hosted provider data. Old browser sessions become invalid.
+These are development services for this computer; do not expose them publicly.
 
 ## Work on the docs
 

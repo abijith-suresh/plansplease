@@ -10,7 +10,7 @@ From the repository root, use `npm ci` followed by `npm run local`. This runs th
 app with an anonymous local Convex backend, real Better Auth test accounts,
 filesystem document bytes, docs, and marketing. It does not require hosted
 provider accounts or load existing `.env.local` files. Data survives restart.
-Read [the local development guide](../../LOCAL_DEVELOPMENT.md) for exact browser,
+Read [the local development guide](../docs/src/content/docs/reference/development.mdx#full-local-workspace) for exact browser,
 CLI, MCP, and reset instructions.
 
 ## Hosted backend development
