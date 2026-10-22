@@ -20,6 +20,40 @@ Tests use local fixtures and do not need production accounts. The public CLI
 requires a patch Changeset for user-facing changes before 1.0.0. Publishing is
 disabled until maintainers explicitly enable it.
 
+## Full local workspace
+
+After `npm ci`, run `npm run local` from the repository root. Open
+`http://127.0.0.1:3000` and create a local test account. The command starts the real
+browser app, anonymous local Convex backend, filesystem storage, marketing site
+on port 4300, and docs on port 4301. Accounts, sessions, metadata, and document
+bytes persist in the ignored `.planview-local/` directory across restarts.
+
+The app has an **Upload document** control with file selection and drag and drop.
+CLI login uses the same account:
+
+```sh
+node apps/cli/dist/index.js --profile local-dev login --cloud-url http://127.0.0.1:3000
+node apps/cli/dist/index.js --profile local-dev upload ./example.html
+node apps/cli/dist/index.js --profile local-dev logout
+```
+
+HTTP MCP clients connect to `http://127.0.0.1:3000/mcp` and complete real OAuth
+with the local account. Native clients can register loopback callbacks and use
+PKCE. No GitHub, Convex account, UploadThing token, or paid hosting is required.
+The first run downloads the local backend binary. The runner isolates its env
+and deployment selection from existing `.env.local` files and cloud credentials.
+
+Ctrl-C stops the services and keeps data. To delete this checkout's local dataset,
+stop the runner and explicitly run:
+
+```sh
+npm run local:reset -- --yes
+```
+
+See the repository's [full local development guide](https://github.com/abijith-suresh/planview/blob/main/LOCAL_DEVELOPMENT.md)
+for reset boundaries, source watching, browser preview safeguards, and acceptance
+checks. These development services are intended for loopback use on this computer.
+
 ## Work on the docs
 
 ```sh
@@ -36,7 +70,7 @@ canonical docs origin and optional path prefix. `PUBLIC_APP_URL` and
 to `.env.local` when you need local overrides. Rebuild after changing a URL.
 The production server reads `PORT` and exposes `/health`; it serves only built files.
 
-## Work on the app
+## Work on the app with a hosted backend
 
 Select a **development** Convex deployment you control and generate its bindings:
 

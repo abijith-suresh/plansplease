@@ -1140,3 +1140,70 @@ button:focus-visible {
 .list-footer {
   flex-wrap: wrap;
 }
+
+.local-sign-in {
+  display: grid;
+  gap: 0.7rem;
+  width: min(100%, 24rem);
+  text-align: left;
+}
+
+.local-sign-in-note {
+  color: var(--text-muted, #99999f);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.local-sign-in input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0.7rem;
+  background: #121214;
+  color: #d9d9dc;
+  border: 1px solid #343439;
+  border-radius: 0.35rem;
+}
+
+.local-sign-in input:focus-visible {
+  outline: 2px solid #e5795a;
+  outline-offset: 3px;
+}
+
+.local-sign-in .button-primary {
+  margin-top: 0.4rem;
+}
+
+.document-upload {
+  margin-bottom: 2rem;
+}
+
+.upload-form {
+  display: grid;
+  gap: 0.85rem;
+  max-width: 34rem;
+  margin-top: 1rem;
+}
+
+.upload-drop-area {
+  display: grid;
+  gap: 1rem;
+  border: 1px dashed #515158;
+  border-radius: 0.4rem;
+  padding: 1.25rem;
+  color: #d9d9dc;
+  line-height: 1.5;
+}
+
+.upload-drop-area:focus-within {
+  border-color: #e5795a;
+}
+
+.upload-form .search-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.upload-drop-area input {
+  max-width: 100%;
+}

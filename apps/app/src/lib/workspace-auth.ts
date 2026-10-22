@@ -15,9 +15,7 @@ export function useWorkspaceAuth() {
 
   const redirectToSignIn = () => {
     if (typeof window === "undefined") return;
-    window.location.assign(
-      hasAuthAttemptCookie(document.cookie) ? "/auth/problem" : "/auth/github"
-    );
+    window.location.assign(hasAuthAttemptCookie(document.cookie) ? "/auth/problem" : "/auth/login");
   };
 
   createEffect(() => {

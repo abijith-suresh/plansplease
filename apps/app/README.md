@@ -1,15 +1,24 @@
 # Planview app
 
 The authenticated product surface is a SolidStart 2 application. Better Auth
-and Convex own authentication and document metadata, while UploadThing owns
-the bytes for standalone `.html` files.
+and Convex own authentication and document metadata. UploadThing stores hosted
+document bytes; the full local workspace uses filesystem storage.
 
-## Local development
+## Full local development
+
+From the repository root, use `npm ci` followed by `npm run local`. This runs the
+app with an anonymous local Convex backend, real Better Auth test accounts,
+filesystem document bytes, docs, and marketing. It does not require hosted
+provider accounts or load existing `.env.local` files. Data survives restart.
+Read [the local development guide](../../LOCAL_DEVELOPMENT.md) for exact browser,
+CLI, MCP, and reset instructions.
+
+## Hosted backend development
 
 From the repository root:
 
 ```sh
-npm install
+npm ci
 npm run dev --workspace @planview/app
 ```
 

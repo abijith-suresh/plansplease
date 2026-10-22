@@ -1,8 +1,10 @@
+import { isLocalDevelopment } from "../../convex/localMode.ts";
+import { getFilesystemStorage } from "./document-storage-filesystem.ts";
 import { createUploadThingStorage } from "./document-storage-uploadthing.ts";
 
 export { createUploadThingStorageAdapter } from "./document-storage-uploadthing.ts";
 
-export const documentStorageProviders = ["uploadthing"] as const;
+export const documentStorageProviders = ["uploadthing", "filesystem"] as const;
 export type DocumentStorageProvider = (typeof documentStorageProviders)[number];
 
 export type StoredDocument = {
@@ -18,13 +20,19 @@ export interface DocumentStorageAdapter {
   upload(input: DocumentStorageUpload): Promise<StoredDocument>;
   getReadUrl(key: string): Promise<string>;
   delete(key: string): Promise<void>;
+  read?(key: string): Promise<Uint8Array<ArrayBuffer>>;
 }
 
 export function isDocumentStorageConfigured() {
-  return Boolean(process.env["UPLOADTHING_TOKEN"]);
+  return isLocalDevelopment(process.env)
+    ? Boolean(process.env["PLANVIEW_LOCAL_STORAGE_DIR"] && process.env["LOCAL_STORAGE_SECRET"])
+    : Boolean(process.env["UPLOADTHING_TOKEN"]);
 }
 
-export function getDocumentStorage(provider = "uploadthing"): DocumentStorageAdapter {
+export function getDocumentStorage(
+  provider = isLocalDevelopment(process.env) ? "filesystem" : "uploadthing"
+): DocumentStorageAdapter {
+  if (provider === "filesystem") return getFilesystemStorage();
   if (provider !== "uploadthing") {
     throw new Error(`Unsupported document storage provider: ${provider}`);
   }

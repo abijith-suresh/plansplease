@@ -371,7 +371,7 @@ export const loginToCloud = async (options: {
   const returnTo = new URL("/cli/authorize", cloudUrl);
   returnTo.searchParams.set("redirect_uri", callbackUrl);
   returnTo.searchParams.set("state", state);
-  const signInUrl = new URL("/auth/github", cloudUrl);
+  const signInUrl = new URL("/auth/login", cloudUrl);
   signInUrl.searchParams.set("returnTo", `${returnTo.pathname}${returnTo.search}`);
   const timer = setTimeout(
     () => tokenReject(new Error("Sign-in timed out. Run `plansplease login` to try again.")),

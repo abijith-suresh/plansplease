@@ -22,6 +22,8 @@ import {
   uploadCleanupGraceMs,
 } from "./storageQuota.ts";
 
+import { isLocalDevelopment, isFilesystemKey } from "./localMode.ts";
+
 const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
 const maxHtmlSizeBytes = 8 * 1024 * 1024;
 const proofValidator = v.object({ expiresAt: v.number(), signature: v.string() });
@@ -114,10 +116,15 @@ export const listPage = query({
 });
 
 export const verifyUploadInput = async (ownerId: string, args: CreateArgs) => {
+  const validLocator =
+    args.storageProvider === "uploadthing"
+      ? args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) &&
+        args.storageKey.length > uploadThingLocatorPrefix(ownerId).length
+      : args.storageProvider === "filesystem" &&
+        isLocalDevelopment(process.env) &&
+        isFilesystemKey(args.storageKey, ownerId);
   if (
-    args.storageProvider !== "uploadthing" ||
-    !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) ||
-    args.storageKey.length <= uploadThingLocatorPrefix(ownerId).length ||
+    !validLocator ||
     (args.contentType !== "text/html" && args.contentType !== "application/vnd.planview.bundle") ||
     args.title.trim().length === 0 ||
     args.title.length > 200 ||
@@ -187,6 +194,7 @@ export const reserveUploadForOwner = async (
     ownerId,
     title: args.title.trim(),
     storageKey: args.storageKey,
+    storageProvider: args.storageProvider,
     sizeBytes: args.sizeBytes,
     uploadDeadlineAt,
     nextAttemptAt,
@@ -323,7 +331,16 @@ export const requestDeletionForOwner = async (
   }
 
   if (document.storageProvider !== undefined || document.storageKey !== undefined) {
-    if (document.storageProvider !== "uploadthing" || !document.storageKey || document.storageId) {
+    if (
+      (document.storageProvider !== "uploadthing" &&
+        !(
+          document.storageProvider === "filesystem" &&
+          isLocalDevelopment(process.env) &&
+          isFilesystemKey(document.storageKey ?? "", ownerId)
+        )) ||
+      !document.storageKey ||
+      document.storageId
+    ) {
       throw new Error("External document storage metadata is incomplete");
     }
     const now = Date.now();
@@ -331,6 +348,7 @@ export const requestDeletionForOwner = async (
     const jobId = await ctx.db.insert("deletionJobs", {
       documentId: id,
       storageKey: document.storageKey,
+      storageProvider: document.storageProvider,
       nextAttemptAt: now,
       attempts: 0,
     });
@@ -375,7 +393,11 @@ export const claimDeletion = internalMutation({
 
     const attempts = job.attempts + 1;
     await ctx.db.patch(args.jobId, { attempts, nextAttemptAt: now + deletionLeaseMs });
-    return { attempts, storageKey: job.storageKey };
+    return {
+      attempts,
+      storageKey: job.storageKey,
+      storageProvider: job.storageProvider ?? "uploadthing",
+    };
   },
 });
 
@@ -468,7 +490,11 @@ export const claimUploadCleanup = internalMutation({
       attempts,
       nextAttemptAt: Date.now() + deletionLeaseMs,
     });
-    return { attempts, storageKey: reservation.storageKey };
+    return {
+      attempts,
+      storageKey: reservation.storageKey,
+      storageProvider: reservation.storageProvider ?? "uploadthing",
+    };
   },
 });
 export const finishUploadCleanup = internalMutation({

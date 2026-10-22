@@ -6,7 +6,11 @@ import { readPublicUrls } from "./src/lib/public-urls.ts";
 
 const urls = readPublicUrls({
   // biome-ignore lint/complexity/useLiteralKeys: Node environment declarations use an index signature.
-  ...loadEnv(process.env["NODE_ENV"] ?? "production", process.cwd(), "PUBLIC_"),
+  ...loadEnv(
+    process.env["NODE_ENV"] ?? "production",
+    process.env["PLANVIEW_ENV_DIR"] ?? process.cwd(),
+    "PUBLIC_"
+  ),
   ...process.env,
 });
 
@@ -16,6 +20,7 @@ export default defineConfig({
   base: urls.docsBasePath,
   trailingSlash: "always",
   vite: {
+    envDir: process.env["PLANVIEW_ENV_DIR"] ?? process.cwd(),
     define: {
       "import.meta.env.PUBLIC_APP_URL": JSON.stringify(urls.appUrl),
       "import.meta.env.PUBLIC_SITE_URL": JSON.stringify(urls.siteUrl),

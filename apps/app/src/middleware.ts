@@ -1,3 +1,4 @@
+import { isLocalDevelopment } from "../convex/localMode";
 import { createMiddleware } from "@solidjs/start/middleware";
 
 import { authorizationServerMetadata, protectedResourceMetadata } from "./lib/mcp-discovery";
@@ -6,7 +7,10 @@ import { authorizationServerMetadata, protectedResourceMetadata } from "./lib/mc
 // these exact /.well-known paths, so serve them before filesystem routing.
 export default createMiddleware([
   (event, next) => {
-    const path = new URL(event.req.url).pathname;
+    const requestUrl = new URL(event.req.url);
+    if (isLocalDevelopment(process.env) && requestUrl.origin !== process.env["SITE_URL"])
+      return new Response("Local workspace origin required", { status: 403 });
+    const path = requestUrl.pathname;
     if (event.req.method === "GET") {
       if (
         path === "/.well-known/oauth-protected-resource" ||

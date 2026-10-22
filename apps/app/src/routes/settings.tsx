@@ -61,7 +61,7 @@ export default function Settings() {
               <div>
                 <strong>{userName()}</strong>
                 <span class="stat-meta">{user()?.email}</span>
-                <span class="stat-meta">Signed in with GitHub</span>
+                <span class="stat-meta">Workspace account</span>
               </div>
             </div>
           </section>

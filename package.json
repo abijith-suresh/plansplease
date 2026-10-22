@@ -35,7 +35,9 @@
     "test": "node --test \"scripts/**/*.test.mjs\" && npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run check && npm run build",
-    "version-packages": "npm run release-policy && changeset version && npm install --package-lock-only --ignore-scripts"
+    "version-packages": "npm run release-policy && changeset version && npm install --package-lock-only --ignore-scripts",
+    "local": "node scripts/local-dev.mjs",
+    "local:reset": "node scripts/local-dev.mjs reset"
   },
   "devDependencies": {
     "@astrojs/compiler": "2.13.1",

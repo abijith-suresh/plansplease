@@ -1,3 +1,4 @@
+import { isLocalDevelopment } from "../../convex/localMode.ts";
 import { initializeDocumentPreview, readPreviewDocument } from "./document-preview-client.ts";
 
 const escapeHtml = (text: string) =>
@@ -36,8 +37,23 @@ const previewContentSecurityPolicy = [
 ].join("; ");
 
 export function documentPreviewResponse(readUrl: string, title = "Document") {
+  return renderDocumentPreview(readUrl, title);
+}
+
+export function localDocumentPreviewResponse(readUrl: string, title = "Document") {
   const url = new URL(readUrl);
-  if (url.protocol !== "https:" || url.username || url.password) {
+  if (
+    !isLocalDevelopment(process.env) ||
+    url.origin !== process.env["SITE_URL"] ||
+    url.pathname !== "/api/local-storage"
+  )
+    throw new Error("Invalid local preview URL");
+  return renderDocumentPreview(readUrl, title, url.origin);
+}
+
+function renderDocumentPreview(readUrl: string, title: string, localOrigin?: string) {
+  const url = new URL(readUrl);
+  if ((!localOrigin && url.protocol !== "https:") || url.username || url.password) {
     throw new Error("Document storage returned an invalid preview URL.");
   }
   const serializedUrl = JSON.stringify(url.href).replace(/</g, "\\u003c");
@@ -52,7 +68,12 @@ export function documentPreviewResponse(readUrl: string, title = "Document") {
     headers: {
       "Cache-Control": "private, no-store",
       "Content-Disposition": "inline",
-      "Content-Security-Policy": previewContentSecurityPolicy,
+      "Content-Security-Policy": localOrigin
+        ? previewContentSecurityPolicy.replace(
+            "connect-src https:",
+            `connect-src https: ${localOrigin}`
+          )
+        : previewContentSecurityPolicy,
       "Content-Type": "text/html; charset=utf-8",
       "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
       "Referrer-Policy": "no-referrer",

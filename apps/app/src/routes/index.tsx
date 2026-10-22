@@ -1,13 +1,26 @@
 import { Meta, Title } from "@solidjs/meta";
 import { A } from "@solidjs/router";
-import { createEffect, createMemo, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onMount, Show } from "solid-js";
 
+import LocalSignIn from "~/components/LocalSignIn";
+import { localSignInReturnTo } from "~/lib/local-sign-in";
 import Icon from "~/components/Icon";
 import { authClient } from "~/lib/auth";
 import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 export default function Home() {
   const session = authClient.useSession();
+  const [localMode, setLocalMode] = createSignal(false);
+  const [githubEnabled, setGithubEnabled] = createSignal(true);
+  onMount(() => {
+    void fetch("/api/local-mode")
+      .then((response) => response.json())
+      .then((data) => {
+        setLocalMode(data.enabled === true);
+        setGithubEnabled(data.enabled !== true || data.github === true);
+      })
+      .catch(() => undefined);
+  });
 
   createEffect(() => {
     const currentSession = session();
@@ -19,7 +32,7 @@ export default function Home() {
     }
 
     document.cookie = clearAuthAttemptCookie;
-    window.location.replace("/documents");
+    window.location.replace(localSignInReturnTo(window.location.search));
   });
 
   const isSignedOut = createMemo(() => {
@@ -55,10 +68,15 @@ export default function Home() {
             </A>
             <h1>Pages from your agent, in one place.</h1>
             <div class="sign-in-actions">
-              <a class="button-primary" href="/auth/github">
-                <Icon name="github" size={18} />
-                <span>Continue with GitHub</span>
-              </a>
+              <Show when={localMode()}>
+                <LocalSignIn />
+              </Show>
+              <Show when={githubEnabled()}>
+                <a class="button-primary" href="/auth/github">
+                  <Icon name="github" size={18} />
+                  <span>Continue with GitHub</span>
+                </a>
+              </Show>
             </div>
           </div>
         </main>
