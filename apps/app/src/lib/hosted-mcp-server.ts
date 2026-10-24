@@ -1,5 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import {
+  cloudDocumentTitleMaxLength,
+  cloudDocumentTitleMinLength,
+} from "@planview/core/cloud-policy";
 
 import { presentMcpUpload } from "./mcp-document-links.ts";
 
@@ -82,7 +86,10 @@ export const createHostedMcpServer = (documents: HostedMcpDocuments, previewBase
     {
       description:
         "Upload an HTML document to your cloud workspace. Maximum encoded size is 8 MiB. Uploaded files are public during development.",
-      inputSchema: z.object({ title: z.string().min(1).max(200), html: z.string() }),
+      inputSchema: z.object({
+        title: z.string().min(cloudDocumentTitleMinLength).max(cloudDocumentTitleMaxLength),
+        html: z.string(),
+      }),
       annotations: { readOnlyHint: false },
     },
     async ({ title, html }) =>
@@ -114,7 +121,7 @@ export const createHostedMcpServer = (documents: HostedMcpDocuments, previewBase
       description:
         "Upload an HTML/CSS/JavaScript artifact as one document. Requires root index.html. File paths are relative and URL-safe. Files contain UTF-8 text; at most 512 files and 8 MiB including the manifest. read_document reads its index.html. Each upload creates a new document.",
       inputSchema: z.object({
-        title: z.string().min(1).max(200),
+        title: z.string().min(cloudDocumentTitleMinLength).max(cloudDocumentTitleMaxLength),
         files: z
           .array(z.object({ path: z.string().min(1).max(1024), content: z.string() }))
           .min(1)

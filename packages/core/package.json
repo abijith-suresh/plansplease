@@ -15,6 +15,10 @@
     "./cloud-bundle": {
       "types": "./dist/cloud-bundle.d.ts",
       "import": "./dist/cloud-bundle.js"
+    },
+    "./cloud-policy": {
+      "types": "./dist/cloud-policy.d.ts",
+      "import": "./dist/cloud-policy.js"
     }
   },
   "scripts": {

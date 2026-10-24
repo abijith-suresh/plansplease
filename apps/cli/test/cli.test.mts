@@ -419,17 +419,11 @@ test("publish --open is recognized and preview is not a command", () => {
   assert.match(preview.stderr, /^Unknown command: preview\n/);
 });
 
-test("the installed plansplease bin invokes the built CLI", () => {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const result = spawnSync(
-    npm,
-    ["exec", "--workspace", "@abijith-suresh/planview", "--", "plansplease", "--version"],
-    {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      env: { ...process.env, npm_config_loglevel: "error" },
-    }
-  );
+test("the built CLI entrypoint reports the package version", () => {
+  const result = spawnSync(process.execPath, [cli, "--version"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  });
   assert.equal(result.status, 0);
   assert.equal(result.error, undefined);
   assert.equal(result.stdout, `plansplease ${packageJson.version}\n`);

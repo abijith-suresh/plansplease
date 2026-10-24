@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readBoundedResponseBytes } from "../src/lib/bounded-response.ts";
+import { createBundleAssetHandler } from "../src/lib/bundle-asset-handler.ts";
+import {
+  bundleEntryUrl,
+  createBundleCapability,
+  verifyBundleCapability,
+} from "../src/lib/bundle-capability.ts";
+import { createBundleReadCache, readBoundedBundle } from "../src/lib/bundle-read-cache.ts";
 import {
   cloudBundleContentType,
   cloudBundleEntry,
   packCloudBundle,
   parseCloudBundle,
 } from "../src/lib/cloud-bundle.ts";
-import {
-  bundleEntryUrl,
-  createBundleCapability,
-  verifyBundleCapability,
-} from "../src/lib/bundle-capability.ts";
-import { createBundleAssetHandler } from "../src/lib/bundle-asset-handler.ts";
-import { createBundleReadCache, readBoundedBundle } from "../src/lib/bundle-read-cache.ts";
 
 const secret = "independent-test-secret-of-at-least-32-bytes";
 const now = 1000;
@@ -213,6 +214,73 @@ test("bundle fetches cap actual streamed bytes even when Content-Length lies", a
   );
   await assert.rejects(readBoundedBundle(response), /8 MiB/);
   assert.equal(cancelled, true);
+});
+
+test("bounded response reads concatenate bytes, release readers and cancel oversized bodies", async () => {
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.enqueue(new Uint8Array([3]));
+        controller.close();
+      },
+    })
+  );
+  assert.deepEqual(
+    [
+      ...(await readBoundedResponseBytes(response, {
+        maxBytes: 3,
+        unavailableMessage: "unavailable",
+        tooLargeMessage: "too large",
+      })),
+    ],
+    [1, 2, 3]
+  );
+  assert.equal(response.body?.locked, false);
+
+  let cancelled = false;
+  const oversized = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    })
+  );
+  await assert.rejects(
+    readBoundedResponseBytes(oversized, {
+      maxBytes: 2,
+      unavailableMessage: "unavailable",
+      tooLargeMessage: "too large",
+    }),
+    /too large/
+  );
+  assert.equal(cancelled, true);
+  assert.equal(oversized.body?.locked, false);
+
+  let errorBodyCancelled = false;
+  const unavailable = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+      },
+      cancel() {
+        errorBodyCancelled = true;
+      },
+    }),
+    { status: 503 }
+  );
+  await assert.rejects(
+    readBoundedResponseBytes(unavailable, {
+      maxBytes: 2,
+      unavailableMessage: "unavailable",
+      tooLargeMessage: "too large",
+    }),
+    /unavailable/
+  );
+  assert.equal(errorBodyCancelled, true);
 });
 
 test("cache bounds in-flight loads, removes failures, expires entries and reuses one bundle", async () => {

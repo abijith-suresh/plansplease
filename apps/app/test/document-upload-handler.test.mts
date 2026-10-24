@@ -1,5 +1,7 @@
 import { cloudBundleContentType, packCloudBundle } from "../src/lib/cloud-bundle.ts";
 import { ConvexError } from "convex/values";
+import { ConvexConfigurationError } from "../src/lib/convex-configuration-error.ts";
+import { cloudDocumentMaxBytes } from "@planview/core/cloud-policy";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -11,7 +13,7 @@ import {
 
 type TestClient = object;
 
-const uploadRequestSizeLimit = 8 * 1024 * 1024 + 64 * 1024;
+const uploadRequestSizeLimit = cloudDocumentMaxBytes + 64 * 1024;
 
 function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<TestClient>> = {}) {
   const calls = {
@@ -143,7 +145,9 @@ test("rejects invalid titles, multiple files, non-HTML files, and files larger t
     },
     {
       name: "file larger than 8 MiB",
-      files: [new File([new Uint8Array(8 * 1024 * 1024 + 1)], "large.html", { type: "text/html" })],
+      files: [
+        new File([new Uint8Array(cloudDocumentMaxBytes + 1)], "large.html", { type: "text/html" }),
+      ],
     },
   ];
 
@@ -201,6 +205,18 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
   ]);
   assert.deepEqual(calls.metadataOwners, ["owner_123"]);
   assert.deepEqual(calls.abandonedKeys, []);
+});
+
+test("maps explicit Convex configuration failures to the existing 503 response", async () => {
+  const { calls, handler } = createHandler({
+    getAuthedClient: async () => {
+      throw new ConvexConfigurationError();
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "backend unavailable" });
+  assert.equal(calls.uploads.length, 0);
 });
 
 test("does not create metadata when storing the uploaded file fails", async () => {

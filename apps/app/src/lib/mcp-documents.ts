@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import { readBundleText, listBundleFilePage } from "./mcp-bundle-reads.ts";
 import { cloudBundleContentType, packCloudBundle, cloudBundleMime } from "./cloud-bundle.ts";
 import { serverBundleReadCache, bundleCacheKey, readBoundedBundle } from "./bundle-read-cache.ts";
+import {
+  cloudDocumentMaxBytes,
+  cloudDocumentTitleMaxLength,
+  cloudDocumentTitleMinLength,
+} from "@planview/core/cloud-policy";
+import { readBoundedResponseBytes } from "./bounded-response.ts";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -12,7 +18,7 @@ import { getDocumentStorage } from "./document-storage";
 import { uploadReservedDocument } from "./reserved-document-upload";
 import { createMcpDocumentProof } from "./mcp-document-proof";
 
-const maxFileBytes = 8 * 1024 * 1024;
+const maxFileBytes = cloudDocumentMaxBytes;
 const maxReadCharacters = 32_768;
 // Each MCP request creates a service, but sequential chunk reads can share one
 // bounded document in this process. Access is still checked by Convex first.
@@ -42,30 +48,11 @@ const present = (document: {
 });
 
 const readBoundedHtml = async (response: Response) => {
-  if (!response.ok || !response.body) throw new Error("Document content is unavailable");
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxFileBytes) throw new Error("Document content exceeds the 8 MiB limit");
-      chunks.push(value);
-    }
-  } catch (error) {
-    await reader.cancel().catch(() => undefined);
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
+  const bytes = await readBoundedResponseBytes(response, {
+    maxBytes: maxFileBytes,
+    unavailableMessage: "Document content is unavailable",
+    tooLargeMessage: "Document content exceeds the 8 MiB limit",
+  });
   return new TextDecoder().decode(bytes);
 };
 
@@ -79,7 +66,10 @@ export function createMcpDocumentService(ownerId: string) {
     contentType: "text/html" | typeof cloudBundleContentType
   ) => {
     const cleanTitle = title.trim();
-    if (cleanTitle.length < 1 || cleanTitle.length > 200) {
+    if (
+      cleanTitle.length < cloudDocumentTitleMinLength ||
+      cleanTitle.length > cloudDocumentTitleMaxLength
+    ) {
       throw new Error("Title must be between 1 and 200 characters");
     }
     if (bytes.length > maxFileBytes) throw new Error("Document exceeds the 8 MiB limit");

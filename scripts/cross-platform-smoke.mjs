@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect } from "effect";
+import { npmPackFilename } from "./npm-pack-result.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -68,9 +69,7 @@ const pack = (destination) => {
       cause,
     });
   }
-  assert.equal(packages.length, 1, "npm pack should produce exactly one package");
-  const tarball = packages[0]?.filename;
-  assert.equal(typeof tarball, "string", "npm pack should report its tarball");
+  const tarball = npmPackFilename(packages);
   return join(destination, tarball);
 };
 

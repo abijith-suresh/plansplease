@@ -8,9 +8,10 @@ import {
   validateBundlePath,
   type BundleManifest,
 } from "./bundle-format.js";
+import { cloudDocumentMaxBytes } from "./cloud-policy.js";
 
 export const cloudBundleContentType = "application/vnd.planview.bundle";
-export const cloudBundleMaxBytes = 8 * 1024 * 1024;
+export const cloudBundleMaxBytes = cloudDocumentMaxBytes;
 
 const mimeTypes: Record<string, string> = {
   html: "text/html",
