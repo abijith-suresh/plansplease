@@ -3,11 +3,10 @@ title: Install the CLI
 description: Install a repository build and publish your first HTML page.
 ---
 import { Code } from '@astrojs/starlight/components';
-import { readPublicUrls } from '../../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
 
-The command is `plansplease`. It runs on your computer and can upload pages to your
-plansplease account. You need Node.js **24.19.0** and npm **11.16.0**.
+The command is `plansplease`. It previews pages on your computer and can upload
+them to a compatible account workspace. You need Node.js **24.19.0** and npm
+**11.16.0**.
 
 ## Install
 
@@ -50,11 +49,16 @@ Local links work on this computer. Publish again after editing to create a new s
 
 ## Upload to your account
 
-<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplansplease upload --open ./page.html`} lang="sh" />
+Hosted services are paused; see [hosted availability](../../reference/planned-features/).
+For a working upload walkthrough, start the [full local workspace](../../reference/development/#full-local-workspace).
 
-Sign in with GitHub and approve the upload access when your browser opens.
-Cloud uploads currently accept one HTML file up to **8 MiB**. Stored file URLs
-are public during alpha, so use non-sensitive test content.
+<Code code="plansplease login --cloud-url http://127.0.0.1:3000\nplansplease upload --open ./page.html" lang="sh" />
+
+Sign in with the local test account and authorize the CLI when your browser
+opens. Upload a standalone HTML file or a folder with root `index.html`; each
+upload is limited to **8 MiB**. CLI folders may include supported assets. MCP
+bundle uploads accept UTF-8 text assets. UploadThing object URLs are public in
+the alpha implementation, so use non-sensitive test content.
 
 See the [CLI reference](../cli/) for profiles, retrieval and other commands,
 or [troubleshooting](../../reference/troubleshooting/) if setup fails.

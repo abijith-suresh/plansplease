@@ -1,50 +1,36 @@
 ---
 title: Cloud workspace
-description: Sign in, upload standalone HTML, and open account-owned previews.
+description: Account-owned HTML and artifact uploads, previews, and deletion.
 ---
-import { readPublicUrls } from '../../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
+The repository supports account-owned uploads through the CLI and hosted MCP.
+The hosted services are currently offline; see [hosted availability](../../reference/planned-features/).
+For a working account and upload walkthrough, start the [full local workspace](../../reference/development/#full-local-workspace).
 
-<a href={appUrl}>Open the staging workspace</a> and sign in with GitHub. View and
-manage documents saved through CLI or MCP to the same account.
+<span id="what-is-available-in-staging"></span>
 
 ## Upload and open
 
-Save one standalone `.html` file using [CLI upload](../cli/#cloud-upload) or
-[hosted MCP](../mcp/). HTML is limited to 8 MiB. Use a useful title so the
-document is easy to find later.
+Upload one HTML file or an artifact folder with [the CLI](../cli/#cloud-upload)
+or [MCP](../mcp/). An artifact needs a root `index.html`, may contain up to 512
+files, and must fit within 8 MiB including its manifest. CLI uploads support
+the documented HTML, script, text, image, font, and media formats. MCP bundles
+accept UTF-8 text assets.
 
-The workspace lists your documents. Open a preview, copy its link, or delete
-the document from there.
+The workspace lists documents owned by the signed-in account. A preview requires
+that account's browser session. Its HTML runs in an opaque-origin sandbox and
+cannot access the workspace's cookies or browser storage. Relative stylesheets,
+scripts, and module imports resolve from the entry file. Binary assets can be
+previewed but are not returned as text by MCP.
 
-Open its preview while signed in to the owning account. Generated HTML runs in
-a sandbox with an opaque origin, so it cannot access the workspace's cookies or
-browser storage. Scripts can still run and load external resources permitted
-by the preview policy.
-
-The account route checks ownership, but that does not make provider storage
-private. UploadThing object URLs are public during alpha. Avoid secrets and
-sensitive documents; see [privacy and limits](../../reference/privacy-and-limits/).
+UploadThing object URLs are public during alpha. Account checks and preview
+sandboxing do not make provider storage private. Avoid secrets and sensitive
+documents; see [privacy and limits](../../reference/privacy-and-limits/).
 
 ## Editing and deletion
 
-Uploads currently create separate documents. To revise a plan, keep the original,
-ask the agent to make the changes, and upload the new version with a clear title.
-Stable document revisions are a proposal, not current behavior.
+Uploads create separate documents. Upload a revised file with a clear title to
+preserve the original. Stable document revisions are a proposal, not current
+behavior.
 
-Deletion hides a document and queues file cleanup. Cleanup retries provider
-failures; deletion is not a guarantee that every previously downloaded copy
-has disappeared.
-
-## What is available in staging
-
-Deployment status reviewed on **2 October 2026**.
-
-The staging service currently supports account-owned standalone uploads and
-OAuth MCP. The repository has merged a configurable 500 MB account quota, but
-staging has not deployed it yet. An older deployment may continue accepting
-uploads under the prior policy until updated.
-
-Cloud artifact folders are implemented on main and awaiting the matching app/backend
-release. Explicit unlisted sharing remains [under review](../../reference/planned-features/). Direct browser storage
-delivery is merged on main and awaiting the staging app/backend rollout.
+Deletion hides a document and queues provider cleanup. Cleanup retries failures;
+previously downloaded copies remain outside the service's control.

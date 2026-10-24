@@ -21,7 +21,7 @@ Commands:
   publish <file|folder>  Publish a snapshot and print its URL
   upload <file|folder>   Upload an HTML page or artifact to your cloud workspace
   login                  Sign in to your cloud workspace
-  logout                 Remove this computer's saved cloud sign-in
+  logout                 Revoke and remove this computer's saved cloud sign-in
   get <id|url>           Write a stored snapshot to standard output
   start                  Start or reuse the daemon for the selected profile
   status                 Show daemon status without starting it
@@ -68,19 +68,21 @@ Options:
 `,
   login: `Usage: plansplease login [options]
 
-Open GitHub sign-in in your browser and authorize this computer for cloud uploads.
-Credentials are saved in the selected profile's private data directory.
+Open the selected cloud app's account sign-in in your browser and authorize this
+computer for uploads. Credentials are saved in the selected profile's private
+data directory.
 
 Options:
   -h, --help             Show this help message
   --cloud-url <url>      Sign in to a specific cloud app origin
 
-The default cloud app is the current alpha staging site. Set PLANVIEW_CLOUD_URL
-or use --cloud-url to select another app origin.
+Set PLANVIEW_CLOUD_URL or use --cloud-url to select an app origin. Use the local
+workspace URL when testing locally.
 `,
   logout: `Usage: plansplease logout
 
-Remove the saved cloud sign-in from the selected profile on this computer.
+Revoke the saved cloud sign-in on the app, then remove it from the selected
+profile on this computer. Revocation requires a connection.
 `,
   get: `Usage: plansplease get [options] <id|url>
 

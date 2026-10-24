@@ -1,10 +1,8 @@
 ---
 title: CLI reference
-description: Local publication, retrieval, profiles, and standalone cloud uploads.
+description: Local publication, retrieval, profiles, and cloud artifact uploads.
 ---
 import { Code } from '@astrojs/starlight/components';
-import { readPublicUrls } from '../../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
 
 Install a [repository-built tarball](../install-cli/)
 before running these commands. The command is `plansplease`. Existing scripts
@@ -54,9 +52,11 @@ than 30 days since last access and reconciles incomplete storage operations.
 The daemon runs that cleanup at startup and every 24 hours. Profiles isolate
 local documents, daemon state, and saved cloud credentials.
 
+<span id="cloud-artifact-folders-on-main"></span>
+
 ## Cloud upload
 
-<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplansplease upload --open ./report.html\nplansplease upload --json ./report.html\nplansplease logout`} lang="sh" />
+<Code code={`plansplease login --cloud-url http://127.0.0.1:3000\nplansplease upload --open ./report.html\nplansplease upload --json ./report.html\nplansplease logout`} lang="sh" />
 
 Login opens browser sign-in and authorizes this computer for uploads. The saved
 credential is upload-only. It cannot list, read, or delete cloud documents.
@@ -65,8 +65,9 @@ a connection. Browser sign-out and CLI logout are separate operations.
 
 Use `--cloud-url` on `login`, or `PLANVIEW_CLOUD_URL`, to select another app origin.
 Existing saved credentials remain tied to the origin used at login.
-Cloud upload accepts standalone HTML up to 8 MiB. Cloud folder uploads are
-[under review](../../reference/planned-features/).
+Cloud uploads accept standalone HTML or an artifact folder up to 8 MiB. The
+local workspace example uses the local app; hosted service availability is in
+the [features reference](../../reference/planned-features/).
 
 ## Automation
 
@@ -85,17 +86,3 @@ Use `npx skills add ./apps/cli/skills` from a Planview checkout. Vercel Skills
 CLI installs into the current project by default; add `-g` for optional
 user-wide installation across projects, and `-a codex -y` for a non-interactive
 Codex installation.
-
-## Cloud artifact folders on main
-
-The repository CLI accepts `plansplease upload ./artifact/`. The destination must
-run the matching bundle-enabled app/backend release; current staging has not
-received that rollout. A folder needs root `index.html`, no more than 512 files,
-and an encoded total up to 8 MiB including its manifest. Relative CSS, JavaScript,
-module imports, supported images, fonts, and media stay with the HTML.
-
-The returned preview requires its owner account. It checks current document access
-before serving each asset. Reopen the stable preview link if its five-minute asset
-capability expires. Asset delivery uses the app service and consumes Railway
-bandwidth; UploadThing alpha objects remain public. See
-[privacy and limits](../../reference/privacy-and-limits/).

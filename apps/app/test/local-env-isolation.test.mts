@@ -16,6 +16,7 @@ test("local Nitro and Vite load only the generated env directory; ordinary dev k
   const directory = await mkdtemp(join(tmpdir(), "plansplease-env-isolation-"));
   const app = join(directory, "app");
   const generated = join(directory, "generated-env");
+  const probe = join(directory, "env-isolation-probe.mjs");
   const files = new Map([
     [join(directory, ".env.local"), "VITE_ROOT_ISOLATION_SENTINEL=root-must-not-load\n"],
     [join(app, ".env"), "VITE_SOURCE_BASE_SENTINEL=source-base-must-not-load\n"],
@@ -54,6 +55,7 @@ test("local Nitro and Vite load only the generated env directory; ordinary dev k
           privateSourceLoaded: process.env.PRIVATE_SOURCE_SENTINEL !== undefined }));
       } finally { await server.close(); }
     `;
+    await writeFile(probe, script, { flag: "wx" });
     const env = Object.fromEntries(
       Object.entries(process.env).filter(
         ([key]) => !/^(VITE_|PUBLIC_|CONVEX_|PLANVIEW_|PRIVATE_SOURCE_SENTINEL$)/.test(key)
@@ -68,15 +70,11 @@ test("local Nitro and Vite load only the generated env directory; ordinary dev k
       PLANVIEW_ENV_DIR: generated,
     });
     const run = async (local: boolean) => {
-      const { stdout } = await execute(
-        process.execPath,
-        ["--experimental-strip-types", "--input-type=module", "--eval", script],
-        {
-          cwd: directory,
-          env: { ...env, ...(local ? { PLANVIEW_LOCAL: "true" } : {}) },
-          timeout: 30_000,
-        }
-      );
+      const { stdout } = await execute(process.execPath, ["--experimental-strip-types", probe], {
+        cwd: directory,
+        env: { ...env, ...(local ? { PLANVIEW_LOCAL: "true" } : {}) },
+        timeout: 30_000,
+      });
       const line = stdout.split("\n").find((value) => value.startsWith("ENV_RESULT="));
       assert.ok(line, "The real dev server must return its transformed client module");
       return JSON.parse(line.slice("ENV_RESULT=".length)) as {

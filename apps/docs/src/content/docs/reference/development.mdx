@@ -3,8 +3,6 @@ title: Repository development
 description: Build the monorepo, run checks, and configure a development cloud backend.
 ---
 import { Code } from '@astrojs/starlight/components';
-import { readPublicUrls } from '../../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
 
 Use Node.js 24.19.0 and npm 11.16.0, matching `.node-version` and the package metadata.
 
@@ -140,10 +138,12 @@ need compatible origins and matching server-side proof secrets. GitHub credentia
 belong in the backend configuration; UploadThing credentials remain server-only.
 Do not give them a `PUBLIC_` or `VITE_` prefix.
 
-For a hosted MCP client, point it at your chosen app's `/mcp` route. The staging
-endpoint is:
+For an MCP test client, use the local app's `/mcp` route:
 
-<Code code={`${appUrl}mcp`} lang="text" />
+<Code code="http://127.0.0.1:3000/mcp" lang="text" />
+
+Hosted service availability is tracked in the
+[features reference](../planned-features/).
 
 ## Deployment boundaries
 

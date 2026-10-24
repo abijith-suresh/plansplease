@@ -3,19 +3,22 @@ title: Connect MCP
 description: OAuth setup, current document tools, and pagination for remote agents.
 ---
 import { Code } from '@astrojs/starlight/components';
-import { readPublicUrls } from '../../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
 
-## Add the remote server
+The hosted service is currently offline; see [hosted availability](../../reference/planned-features/).
+For testing, start the [full local workspace](../../reference/development/#full-local-workspace).
+
+<span id="add-the-remote-server"></span>
+
+## Add the server
 
 Use this URL in your client's remote MCP server settings:
 
-<Code code={`${appUrl}mcp`} lang="text" />
+<Code code="http://127.0.0.1:3000/mcp" lang="text" />
 
-The server supports authenticated HTTP MCP. The current default requires a client
-that supports OAuth with Client ID Metadata Documents, or CIMD. Follow the client's
-browser authorization flow, sign in with GitHub, and approve consent for the
-plansplease workspace.
+The server supports authenticated HTTP MCP using browser-based OAuth. In the
+local workspace, sign in with the local test account created during setup.
+Hosted deployments use their configured account provider; this repository's
+hosted configuration uses GitHub.
 
 Do not paste a CLI upload credential, GitHub token, UploadThing token, or backend
 secret into an MCP configuration. OAuth supplies the appropriate access token.
@@ -37,10 +40,6 @@ No current document tool reads another account's workspace.
 | `upload_bundle` | `title`, `files` containing relative `path` and UTF-8 `content` | Artifact `id`, owner preview `url`, `kind`, and `fileCount` |
 | `list_bundle_files` | `id`, optional `offset` and `limit` from 1 to 50 | Asset paths and `nextOffset` |
 | `delete_document` | `id` | Hides the document and queues provider cleanup |
-
-The bundle tools and asset-path reads require the matching app/backend release.
-They are implemented on main and awaiting rollout; current staging still supports
-standalone HTML tools only. See [deployment status](../../reference/planned-features/).
 
 Bundles require root `index.html`, at most 512 files, and an encoded total up to
 8 MiB including the manifest. MCP uploads accept UTF-8 text assets only. A read
@@ -73,5 +72,5 @@ both app and backend. It is not a switch users can enable in their client.
 An unsupported client may fail before the sign-in page appears.
 See [troubleshooting](../../reference/troubleshooting/) before changing credentials.
 
-Cloud bundles await deployment; explicit unlisted sharing remains
-[a separate feature under review](../../reference/planned-features/).
+Hosted service availability and unlisted sharing status are in the
+[features reference](../../reference/planned-features/).

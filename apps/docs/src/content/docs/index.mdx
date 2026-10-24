@@ -7,14 +7,17 @@ editUrl: false
 ---
 import SetupChoices from '../../components/SetupChoices.astro';
 import { readPublicUrls } from '../../lib/public-urls.ts';
-export const { docsBasePath, appUrl, siteUrl } = readPublicUrls(import.meta.env);
+export const { docsBasePath } = readPublicUrls(import.meta.env);
 
 Choose how you want to use plansplease.
+
+Hosted services are currently paused. See [hosted availability](reference/planned-features/)
+or start the [full local workspace](reference/development/#full-local-workspace) to try the account flows.
 
 <SetupChoices basePath={docsBasePath} />
 
 <div class="docs-quick-links">
-  <a href={appUrl}>Open plansplease <span aria-hidden="true">↗</span></a>
-  <a href={siteUrl}>About plansplease <span aria-hidden="true">↗</span></a>
+  <a href={`${docsBasePath}reference/development/#full-local-workspace`}>Try locally <span aria-hidden="true">→</span></a>
+  <a href={`${docsBasePath}reference/planned-features/`}>Hosted availability <span aria-hidden="true">→</span></a>
   <a href="https://github.com/abijith-suresh/planview">GitHub <span aria-hidden="true">↗</span></a>
 </div>

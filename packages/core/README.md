@@ -1,36 +1,11 @@
 # @planview/core
 
-Private Planview primitives shared by later publication work. This package has no
-file-system inspection or copying behavior. `resolveAppDataPaths()` returns
-separate `documentsDir` and `stagingDir` paths for the private storage boundary.
+Private pure policy and validation primitives shared by the CLI, local runtime,
+and app. Core resolves application-data paths and validates document IDs, source
+files, and artifact bundle metadata. It does not inspect, read, or copy source
+files and performs no filesystem, network, or cloud I/O.
 
-## Document identifiers
-
-`generateDocumentId()` creates a cryptographically random NanoID-style document
-identifier: exactly 21 characters from the URL-safe alphabet (`A-Z`, `a-z`,
-`0-9`, `_`, and `-`). `validateDocumentId()` and `isValidDocumentId()` enforce
-that shape strictly. Generation accepts an optional `randomBytes` dependency so
-callers can use deterministic bytes in tests; it does not track uniqueness or
-retry collisions. Uniqueness belongs to the persistence boundary.
-
-## Source-file policy
-
-`validateSourceFileExtension()` accepts only `.html` and `.htm`. Extensions are
-matched case-insensitively (`INDEX.HTML` is accepted), which follows normal
-cross-platform CLI expectations while preserving the original path. Both `/`
-and `\\` separators are recognized when identifying the final path component;
-this is parsing only, not file access.
-
-`validateSourceFileSize()` accepts non-negative integer byte sizes up to and
-including `V1_MAX_HTML_SIZE_BYTES` (10 MiB). `validateSourceFile()` combines the
-extension and size checks. These validators do not inspect, read, or copy files.
-Unsupported extensions, invalid sizes, and oversized files produce distinct
-error classes with stable `code` values.
-
-## Page bundles
-
-The v1 bundle format stores a folder snapshot in one HTML-named file. It has a
-fixed header, a bounded JSON manifest, and byte ranges for each regular file.
-Bundles require a root `index.html`, use safe POSIX paths, and are limited to
-512 files and a 512 KiB manifest. The storage and daemon layers validate the
-manifest before serving any range.
+The source-file policy accepts `.html` and `.htm` up to 10 MiB. The bundle
+format requires root `index.html`, uses safe POSIX paths, and allows at most 512
+files. See the exported validators and policy constants for the executable
+contract.
