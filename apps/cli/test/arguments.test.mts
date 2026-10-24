@@ -25,7 +25,6 @@ test("argument parsing preserves option boundaries and cloud URL forms", () => {
   assert.deepEqual(parsed, {
     help: false,
     json: true,
-    force: false,
     open: false,
     cloudUrl: "https://example.test",
     operands: ["--report.html"],
@@ -43,9 +42,13 @@ test("argument parsing keeps option failures typed", () => {
   const unknownOption = Effect.runSync(
     Effect.flip(parseOptions(["--unknown"], { helpTopic: "upload" }))
   );
+  const removedForceOption = Effect.runSync(
+    Effect.flip(parseOptions(["--force"], { helpTopic: "upload" }))
+  );
   const invalidProfile = Effect.runSync(Effect.flip(parseGlobalOptions(["--profile", "Bad"])));
 
   assert.ok(unknownOption instanceof UnknownOptionError);
+  assert.ok(removedForceOption instanceof UnknownOptionError);
   assert.ok(invalidProfile instanceof InvalidOptionValueError);
   const publicUnknownOption = Effect.runSync(
     Effect.flip(

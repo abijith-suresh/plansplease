@@ -78,11 +78,13 @@ status messages.
 ```sh
 plansplease help
 plansplease help upload
-plansplease skills install
+npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
 ```
 
-The skill installer writes `planview` and `create-html` to `~/.agents/skills`.
-It refuses existing directories unless `--force` is supplied.
+Use `npx skills add ./apps/cli/skills` from a Planview checkout. Vercel Skills
+CLI installs into the current project by default; add `-g` for optional
+user-wide installation across projects, and `-a codex -y` for a non-interactive
+Codex installation.
 
 ## Cloud artifact folders on main
 

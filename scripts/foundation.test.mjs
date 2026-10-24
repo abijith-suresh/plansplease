@@ -255,7 +255,8 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(cliPackageJson.scripts, "prepack", "npm run build", "CLI prepack script");
   const cliSource = readText("apps/cli/src/index.ts");
   assert.match(cliSource, /from "\.\.\/package\.json" with \{ type: "json" \}/);
-  assert.match(readText("apps/cli/src/help.ts"), /skills install/);
+  assert.match(readText("apps/cli/src/help.ts"), /npx skills add/);
+  assert.doesNotMatch(readText("apps/cli/src/index.ts"), /installSkills|SkillsCommandError/);
   assert.match(readText("apps/cli/skills/planview/SKILL.md"), /^name: planview/m);
   assert.match(readText("apps/cli/skills/create-html/SKILL.md"), /^name: create-html/m);
   assert.match(cliSource, /export const VERSION = packageVersion;/);

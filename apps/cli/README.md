@@ -146,33 +146,31 @@ URLs from another active profile, and missing documents fail on stderr. `clean` 
 human-readable summary to stdout. `status` does not start a daemon; `start`
 reuses an authenticated daemon it owns and never terminates an unknown process
 listening on the port.
-The package also bundles independent `planview` and `create-html` Agent Skills.
-Install both into `~/.agents/skills` with:
+The package source includes the `planview` and `create-html` Agent Skills. Use
+the [Vercel Skills CLI](https://github.com/vercel-labs/skills) to install them.
+From a project directory, install them into that project (the default):
 
 ```sh
-plansplease skills install
+npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
 ```
 
-Installation refuses to replace an existing skill directory. Use
-`plansplease skills install --force` for an explicit replacement. The installer
-creates missing home parents, requires the destination parents to be owned by
-the current user and not writable by group/other, stages both trees privately,
-and uses a durable journal plus a per-destination lock. A later invocation
-recovers an interrupted transaction before inspecting or changing either skill.
-It rejects static symlinks and unsafe ownership/modes and never follows links
-while copying the bundle.
+From a Planview checkout, use the local source instead:
 
-The lock serializes cooperating Planview installers, but it is not a lock on
-readers of `~/.agents/skills`. Portable Node has no atomic operation that
-replaces two sibling directories at once, so a reader that ignores the lock can
-briefly observe one old and one new tree (or one tree missing) while a commit is
-in progress. The journal makes normal installer crashes recoverable to the
-previous or committed generation; it cannot provide directory-level atomicity
-or protect against a hostile external process replacing paths between Node's
-checks and filesystem operations. That replacement race is outside the PRD's
-single-user v1 trust model. Windows mode/ownership values and reparse-point
-classification likewise remain platform limitations, so Windows users must
-provision an account-owned, non-user-writable home/destination.
+```sh
+npx skills add ./apps/cli/skills
+```
+
+Add `-g` only when you want user-wide installation across projects. Select an
+agent with `-a codex`; add `-y` for a non-interactive install. See the [Skills
+CLI installation reference](https://github.com/vercel-labs/skills/blob/main/docs/commands.md#skills-add)
+for all supported agents and options.
+
+Existing global Planview skills remain in place until replaced. To replace or
+refresh the global Codex copies, run:
+
+```sh
+npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills -g -a codex -y
+```
 
 On POSIX, the app-data and runtime directories are owned by the current UID and
 protected with `0700`; descriptor and lock files are owned by that UID and

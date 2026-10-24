@@ -106,10 +106,11 @@ The marketing staging service uses this configuration:
 The cloud app will get a production domain after the product domain is purchased and configured.
 
 CI runs the required Node 24 quality gate on Linux for pull requests and pushes to
-`main`. It also packs the public `@abijith-suresh/planview` npm package and
-smoke-tests the resulting tarball without publishing it or requiring a secret.
-macOS and Windows run the same clean packed artifact through CLI install,
-publish/get, daemon status/stop, and bundled skills installation; the POSIX-only
+`main`. Its smoke check uses the Vercel Skills CLI to install skills from the
+checkout into an isolated project. It also packs the public
+`@abijith-suresh/planview` npm package and smoke-tests the resulting tarball
+without publishing it or requiring a secret. macOS and Windows run the packed
+CLI lifecycle smoke for publish/get and daemon status/stop; the POSIX-only
 storage suite remains part of Linux `npm run verify`. A push to `main` validates the
 repository, then the Changesets Action creates or updates the generated
 `changeset-release/main` version PR with the `RELEASE_TOKEN` PAT. Merging that PR

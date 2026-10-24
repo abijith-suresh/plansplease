@@ -9,12 +9,11 @@ export const COMMANDS = [
   "stop",
   "restart",
   "clean",
-  "skills",
   "help",
 ] as const;
 
 export type Command = (typeof COMMANDS)[number];
-export type HelpTopic = Command | "skills install";
+export type HelpTopic = Command;
 
 const ROOT_HELP = `Usage: plansplease [global-options] <command> [options]
 
@@ -29,7 +28,6 @@ Commands:
   stop                   Gracefully stop the local daemon
   restart                Restart the local daemon
   clean                  Remove expired snapshots and reconcile storage
-  skills                 Manage bundled Agent Skills
   help [command]         Show help for a command
 
 Global options:
@@ -39,6 +37,11 @@ Global options:
 
 Profile names use lowercase letters, numbers, hyphens, and underscores.
 Use plansplease <command> --help for command options.
+
+Install the bundled Agent Skills with the Vercel Skills CLI:
+  npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
+  npx skills add ./apps/cli/skills              (from a local checkout)
+Skills CLI installs to the project by default; add -g for optional user-wide installation.
 `;
 
 const COMMAND_HELP: Record<HelpTopic, string> = {
@@ -128,22 +131,6 @@ Remove expired snapshots and reconcile incomplete storage operations.
 Options:
   -h, --help             Show this help message
   --json                 Print the cleanup result as one JSON object
-`,
-  skills: `Usage: plansplease skills <command>
-
-Commands:
-  install [--force]      Install bundled Agent Skills into ~/.agents/skills
-
-Use plansplease skills install --help for installation details.
-`,
-  "skills install": `Usage: plansplease skills install [options]
-
-Install the bundled planview and create-html Agent Skills into ~/.agents/skills.
-Existing skill directories are refused unless --force is supplied.
-
-Options:
-  -h, --help             Show this help message
-  --force                Replace existing skill directories
 `,
   help: `Usage: plansplease help [command]
 

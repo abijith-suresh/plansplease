@@ -20,11 +20,9 @@ import {
 import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "./cloud.js";
 import { runDaemonCommandFromArgs, runDocumentCommand } from "./commands/local.js";
 import { formatHelp, type HelpTopic } from "./help.js";
-import { installSkills } from "./skills.js";
 import {
   CloudCommandError,
   OutputCommandError,
-  SkillsCommandError,
   UnknownCommandError,
   describe,
   formatError,
@@ -49,7 +47,6 @@ export {
   OpenBrowserCommandError,
   OutputCommandError,
   PublishCommandError,
-  SkillsCommandError,
   UnknownCommandError,
   UnexpectedArgumentsError,
   type CliError,
@@ -116,20 +113,6 @@ export const openUrl = (url: string, spawnProcess: typeof spawn = spawn) =>
     child.once("spawn", onSpawn);
   });
 
-const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
-  Effect.tryPromise({
-    try: async () => {
-      const destination = await installSkills({ force });
-      await stdout(`Installed planview and create-html skills in ${destination}.\n`);
-      return 0;
-    },
-    catch: (cause) =>
-      new SkillsCommandError({
-        cause,
-        message: `Could not install plansplease skills: ${describe(cause)}`,
-      }),
-  });
-
 export const parseGetReference = (reference: string, port?: number) =>
   String(parseDocumentReference(reference, port));
 
@@ -146,12 +129,7 @@ const runHelpCommand = (
         return writeHelp(stdout, help ? "help" : undefined);
       }
 
-      const topic =
-        operands.length === 1 && isCommand(operands[0])
-          ? operands[0]
-          : operands.length === 2 && operands[0] === "skills" && operands[1] === "install"
-            ? "skills install"
-            : undefined;
+      const topic = operands.length === 1 && isCommand(operands[0]) ? operands[0] : undefined;
       if (topic === undefined) {
         const requestedTopic = operands.join(" ");
         return Effect.fail(
@@ -164,50 +142,6 @@ const runHelpCommand = (
       return writeHelp(stdout, topic);
     })
   );
-
-const runSkillsCommand = (
-  args: readonly string[],
-  stdout: StdoutWriter
-): Effect.Effect<number, CliError> => {
-  const [subcommand, ...remaining] = args;
-  if (subcommand === undefined || isHelpOption(subcommand)) {
-    if (remaining.length > 0) {
-      return Effect.fail(
-        unexpectedArguments(
-          remaining,
-          `Unexpected arguments: ${remaining.join(" ")}\n\n${formatHelp("skills")}`
-        )
-      );
-    }
-    return writeHelp(stdout, "skills");
-  }
-
-  if (subcommand !== "install") {
-    if (subcommand.startsWith("-") && subcommand !== "-") {
-      return Effect.fail(unknownOption(subcommand, "skills"));
-    }
-    return Effect.fail(
-      unexpectedArguments(args, `Unknown skills command: ${subcommand}\n\n${formatHelp("skills")}`)
-    );
-  }
-
-  return parseOptions(remaining, { allowForce: true, helpTopic: "skills install" }).pipe(
-    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
-      if (parsed.help) {
-        return writeHelp(stdout, "skills install");
-      }
-      if (parsed.operands.length > 0) {
-        return Effect.fail(
-          unexpectedArguments(
-            parsed.operands,
-            `Unexpected arguments: ${parsed.operands.join(" ")}\n\n${formatHelp("skills install")}`
-          )
-        );
-      }
-      return runSkillsInstallCommand(parsed.force, stdout);
-    })
-  );
-};
 
 const runLoginCommand = (
   args: readonly string[],
@@ -373,10 +307,6 @@ const commandWithProfile = (
     return runHelpCommand(trailing, stdout);
   }
 
-  if (argument === "skills") {
-    return runSkillsCommand(trailing, stdout);
-  }
-
   if (argument === "login") {
     return runLoginCommand(trailing, stdout, profile);
   }
@@ -435,7 +365,6 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "PublishCommandError",
         "OpenBrowserCommandError",
         "GetCommandError",
-        "SkillsCommandError",
         "CloudCommandError",
         "OutputCommandError",
       ],

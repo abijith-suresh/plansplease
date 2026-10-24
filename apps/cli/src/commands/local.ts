@@ -23,10 +23,7 @@ import {
   type StdoutWriter,
 } from "../output.js";
 
-type DaemonCommand = Exclude<
-  Command,
-  "publish" | "upload" | "login" | "logout" | "get" | "skills" | "help"
->;
+type DaemonCommand = Exclude<Command, "publish" | "upload" | "login" | "logout" | "get" | "help">;
 
 type OpenUrl = (url: string) => Promise<void>;
 

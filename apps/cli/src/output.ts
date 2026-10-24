@@ -103,11 +103,6 @@ export class GetCommandError extends Data.TaggedError("GetCommandError")<{
   readonly message: string;
 }> {}
 
-export class SkillsCommandError extends Data.TaggedError("SkillsCommandError")<{
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
-
 export class CloudCommandError extends Data.TaggedError("CloudCommandError")<{
   readonly operation: "login" | "logout" | "upload";
   readonly cause: unknown;
@@ -129,7 +124,6 @@ export type CliError =
   | PublishCommandError
   | OpenBrowserCommandError
   | GetCommandError
-  | SkillsCommandError
   | CloudCommandError
   | OutputCommandError;
 
