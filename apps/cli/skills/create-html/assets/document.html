@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Document title</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f6f7f8;
+        --surface: #ffffff;
+        --surface-raised: #f0f2f4;
+        --text: #20252b;
+        --muted: #5c6672;
+        --border: #d7dde3;
+        --control-border: #7f8994;
+        --accent: #285b78;
+        --accent-strong: #17415a;
+        --accent-soft: #e5f0f5;
+        --focus: #0b6e99;
+        --success: #1f6848;
+        --warning: #76520c;
+        --danger: #9d3535;
+        --space-1: 0.375rem;
+        --space-2: 0.75rem;
+        --space-3: 1rem;
+        --space-4: 1.5rem;
+        --space-5: 2rem;
+        --space-6: 3rem;
+        --content-width: 68rem;
+        --radius-small: 0.4rem;
+        --radius: 0.75rem;
+        --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --page: #171b20;
+        --surface: #20262d;
+        --surface-raised: #29323b;
+        --text: #edf1f4;
+        --muted: #b2bdc7;
+        --border: #414d58;
+        --control-border: #72808b;
+        --accent: #9ccce2;
+        --accent-strong: #c4e4f1;
+        --accent-soft: #273c48;
+        --focus: #9ddcff;
+        --success: #9bd4b5;
+        --warning: #f1cf84;
+        --danger: #ffaaaa;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]):not([data-theme="dark"]) {
+          color-scheme: dark;
+          --page: #171b20;
+          --surface: #20262d;
+          --surface-raised: #29323b;
+          --text: #edf1f4;
+          --muted: #b2bdc7;
+          --border: #414d58;
+          --control-border: #72808b;
+          --accent: #9ccce2;
+          --accent-strong: #c4e4f1;
+          --accent-soft: #273c48;
+          --focus: #9ddcff;
+          --success: #9bd4b5;
+          --warning: #f1cf84;
+          --danger: #ffaaaa;
+        }
+      }
+
+      :where(*) {
+        box-sizing: border-box;
+      }
+
+      :root {
+        background: var(--page);
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 100%;
+        line-height: 1.6;
+        scroll-behavior: smooth;
+      }
+
+      :where(body) {
+        margin: 0;
+      }
+
+      :where(a) {
+        color: var(--accent-strong);
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.18em;
+      }
+
+      :where(a:hover) {
+        text-decoration-thickness: 0.14em;
+      }
+
+      :where(:focus-visible) {
+        outline: 3px solid var(--focus);
+        outline-offset: 3px;
+      }
+
+      :where(button, input, select, textarea) {
+        color: inherit;
+        font: inherit;
+      }
+
+      :where(button, input, select, textarea) {
+        border: 1px solid var(--control-border);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+
+      :where(button) {
+        min-height: 2.75rem;
+        padding: 0.55rem 0.9rem;
+        cursor: pointer;
+      }
+
+      :where(button:hover) {
+        background: var(--surface-raised);
+      }
+
+      :where(button[aria-disabled="true"]) {
+        color: var(--muted);
+        cursor: default;
+      }
+
+      :where([hidden]) {
+        display: none;
+      }
+
+      :where(input, select, textarea) {
+        width: 100%;
+        padding: 0.65rem 0.75rem;
+      }
+
+      :where(textarea) {
+        min-height: 7rem;
+        resize: vertical;
+      }
+
+      :where(code, pre) {
+        font-family: var(--font-mono);
+      }
+
+      :where(code) {
+        overflow-wrap: anywhere;
+      }
+
+      :where(table) {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+
+      :where(th, td) {
+        padding: 0.7rem 0.85rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      :where(th) {
+        font-weight: 650;
+      }
+
+      :where(img, svg, video) {
+        max-width: 100%;
+      }
+
+      .page {
+        width: min(100% - 2rem, var(--content-width));
+        margin-inline: auto;
+      }
+
+      .masthead {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        padding-block: var(--space-3);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .masthead > * {
+        min-width: 0;
+      }
+
+      .eyebrow,
+      .meta,
+      .muted {
+        color: var(--muted);
+      }
+
+      .eyebrow {
+        margin: 0;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      main {
+        padding-block: var(--space-6);
+      }
+
+      .intro {
+        max-width: 48rem;
+        margin-bottom: var(--space-6);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-block: 0 var(--space-3);
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+        text-wrap: balance;
+      }
+
+      h1 {
+        max-width: 18ch;
+        margin-top: var(--space-2);
+        font-size: clamp(1.5rem, calc(5vw + 1rem), 4rem);
+        letter-spacing: -0.045em;
+      }
+
+      h2 {
+        margin-top: var(--space-6);
+        font-size: clamp(1.4rem, 3vw, 1.9rem);
+      }
+
+      h3 {
+        font-size: 1.15rem;
+      }
+
+      .meta {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .prose {
+        max-width: 72ch;
+      }
+
+      .prose :where(ul, ol) {
+        padding-inline-start: 1.35rem;
+      }
+
+      .prose li + li {
+        margin-top: var(--space-1);
+      }
+
+      .callout {
+        margin-block: var(--space-4);
+        padding: var(--space-3) var(--space-4);
+        border-inline-start: 4px solid var(--accent);
+        border-radius: 0 var(--radius-small) var(--radius-small) 0;
+        background: var(--accent-soft);
+      }
+
+      .callout :last-child {
+        margin-bottom: 0;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        color: var(--success);
+        font-weight: 650;
+      }
+
+      .status::before {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        background: currentColor;
+        content: "";
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+
+      .table-scroll-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin-block: var(--space-2);
+      }
+
+      .table-scroll-controls[hidden] {
+        display: none;
+      }
+
+      .field {
+        display: grid;
+        gap: var(--space-1);
+        max-width: 32rem;
+        margin-block: var(--space-3);
+      }
+
+      .field label {
+        font-weight: 650;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        align-items: center;
+      }
+
+      .button-primary {
+        border-color: var(--accent-strong);
+        background: var(--accent-strong);
+        color: var(--page);
+        font-weight: 650;
+      }
+
+      .button-primary:hover {
+        filter: brightness(0.94);
+      }
+
+      footer {
+        padding-block: var(--space-4);
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 38rem) {
+        .page {
+          width: min(100% - 1.25rem, var(--content-width));
+        }
+
+        main {
+          padding-block: var(--space-4);
+        }
+
+        .masthead {
+          align-items: flex-start;
+        }
+
+        :where(th, td) {
+          padding: 0.6rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :root {
+          scroll-behavior: auto;
+        }
+      }
+
+      @media (forced-colors: active) {
+        :where(button, input, select, textarea, .table-wrap) {
+          border: 1px solid ButtonText;
+        }
+
+        :where(:focus-visible) {
+          outline-color: Highlight;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <p class="eyebrow">Document type</p>
+        <button id="theme-toggle" type="button" aria-pressed="false" hidden>
+          Dark theme
+        </button>
+      </header>
+
+      <main>
+        <article>
+          <header class="intro">
+            <p class="eyebrow">Optional category</p>
+            <h1>Document title</h1>
+            <p class="meta">Updated <time datetime="2026-01-01">January 1, 2026</time> · By Author</p>
+          </header>
+
+          <div class="prose">
+            <p>
+              Replace this starter copy with the information people came to
+              understand or act on. Keep the page focused on its purpose.
+            </p>
+
+            <aside class="callout" aria-label="Key point">
+              <p><strong>Key point.</strong> Use a callout when one detail needs to stand apart.</p>
+            </aside>
+
+            <section aria-labelledby="details-heading">
+              <h2 id="details-heading">Section heading</h2>
+              <p>Use sections to group related information. Lists work well for short, parallel points:</p>
+              <ul>
+                <li>First useful point</li>
+                <li>Second useful point</li>
+              </ul>
+
+              <div class="table-scroll-controls" hidden>
+                <button type="button" class="scroll-table-left" aria-controls="example-comparison">
+                  Scroll comparison left
+                </button>
+                <button type="button" class="scroll-table-right" aria-controls="example-comparison">
+                  Scroll comparison right
+                </button>
+              </div>
+              <div class="table-wrap" id="example-comparison">
+                <table>
+                  <caption class="muted">Optional table caption</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Item</th>
+                      <th scope="col">Description</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">Example</th>
+                      <td>Use a table for data with meaningful row and column relationships.</td>
+                      <td><span class="status">Ready</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="action-section" aria-labelledby="action-heading" hidden>
+              <h2 id="action-heading">Optional action</h2>
+              <p>Use this field and button only when the document has a clear local interaction.</p>
+              <div class="field">
+                <label for="example-field">Example field</label>
+                <input id="example-field" name="example" autocomplete="off" />
+              </div>
+              <div class="actions">
+                <button class="button-primary" type="button">Preview value</button>
+                <a href="#details-heading">Secondary link</a>
+              </div>
+              <p class="meta" id="action-status" role="status" aria-live="polite"></p>
+            </section>
+          </div>
+        </article>
+      </main>
+
+      <footer>
+        <p>Optional source, date, or attribution.</p>
+      </footer>
+    </div>
+
+    <script>
+      const themeToggle = document.querySelector("#theme-toggle");
+      const actionSection = document.querySelector("#action-section");
+      const primaryAction = document.querySelector(".button-primary");
+      const exampleField = document.querySelector("#example-field");
+      const status = document.querySelector("#action-status");
+
+      const systemPrefersDark = window.matchMedia?.("(prefers-color-scheme: dark)");
+      const currentTheme = () =>
+        document.documentElement.dataset.theme || (systemPrefersDark?.matches ? "dark" : "light");
+      if (themeToggle) {
+        const updateThemeControl = () =>
+          themeToggle.setAttribute("aria-pressed", String(currentTheme() === "dark"));
+
+        themeToggle.hidden = false;
+        updateThemeControl();
+
+        systemPrefersDark?.addEventListener("change", () => {
+          if (!document.documentElement.dataset.theme) updateThemeControl();
+        });
+
+        themeToggle.addEventListener("click", () => {
+          const nextTheme = currentTheme() === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = nextTheme;
+          updateThemeControl();
+        });
+      }
+
+      if (actionSection && primaryAction && exampleField && status) {
+        actionSection.hidden = false;
+        primaryAction.addEventListener("click", () => {
+          const value = exampleField.value.trim();
+          status.textContent = value ? `Preview: ${value}` : "Enter a value to preview.";
+        });
+      }
+
+      document.querySelectorAll(".table-wrap[id]").forEach((tableWrap) => {
+        const matchingButtons = Array.from(
+          document.querySelectorAll(".table-scroll-controls button[aria-controls]"),
+        ).filter((button) => button.getAttribute("aria-controls") === tableWrap.id);
+        const scrollTableLeft = matchingButtons.find((button) =>
+          button.classList.contains("scroll-table-left"),
+        );
+        const scrollTableRight = matchingButtons.find((button) =>
+          button.classList.contains("scroll-table-right"),
+        );
+        const tableScrollControls = scrollTableLeft?.closest(".table-scroll-controls");
+
+        if (
+          !tableScrollControls ||
+          !scrollTableLeft ||
+          !scrollTableRight ||
+          scrollTableRight.closest(".table-scroll-controls") !== tableScrollControls
+        ) {
+          return;
+        }
+
+        const updateTableScrollControls = () => {
+          const maxScroll = tableWrap.scrollWidth - tableWrap.clientWidth;
+          tableScrollControls.hidden = maxScroll <= 1;
+          scrollTableLeft.setAttribute("aria-disabled", String(tableWrap.scrollLeft <= 1));
+          scrollTableRight.setAttribute("aria-disabled", String(tableWrap.scrollLeft >= maxScroll - 1));
+        };
+
+        scrollTableLeft.addEventListener("click", () => {
+          if (scrollTableLeft.getAttribute("aria-disabled") === "true") return;
+          tableWrap.scrollBy({ left: -Math.max(tableWrap.clientWidth * 0.75, 1) });
+        });
+        scrollTableRight.addEventListener("click", () => {
+          if (scrollTableRight.getAttribute("aria-disabled") === "true") return;
+          tableWrap.scrollBy({ left: Math.max(tableWrap.clientWidth * 0.75, 1) });
+        });
+        tableWrap.addEventListener("scroll", updateTableScrollControls, { passive: true });
+        window.addEventListener("resize", updateTableScrollControls);
+        updateTableScrollControls();
+      });
+    </script>
+  </body>
+</html>

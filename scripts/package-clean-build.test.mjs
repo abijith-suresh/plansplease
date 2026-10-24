@@ -26,5 +26,6 @@ test("a clean build is included by the package dry run", () => {
     result.stdout,
     /"path": "skills\/create-html\/references\/browser-native-patterns\.md"/
   );
+  assert.match(result.stdout, /"path": "skills\/create-html\/assets\/document\.html"/);
   assert.match(result.stdout, /"path": "man\/plansplease\.1"/);
 });
