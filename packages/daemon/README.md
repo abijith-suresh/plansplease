@@ -1,38 +1,19 @@
 # @planview/daemon
 
-Private daemon and publication implementation for Planview. It is bundled into
-the published CLI and is not a published package API. The authenticated
-management boundary coordinates the existing SQLite metadata store, immutable
-document-file store, and publication coordinator.
+Private local daemon bundled into the public CLI. It owns the loopback HTTP
+server, authenticated lifecycle operations, snapshot delivery, and cleanup. The
+public listener prefers `127.0.0.1:4777`, then tries the next 50 ports. Named
+profiles keep separate databases, files, and runtime state under
+`planview/profiles/<name>`.
 
-The public v1 listener prefers `127.0.0.1:4777`. When that port is occupied,
-the daemon tries the next 50 ports and records the port that actually bound.
-Test-only configuration can select a preferred port and can enable strict
-binding for hermetic tests; it is not part of the production CLI contract.
+The daemon reconciles interrupted publications at startup and removes snapshots
+whose last access is older than 30 days at startup and every 24 hours. Storage
+coordination and its recovery limits are documented in the
+[@planview/storage README](../storage/README.md).
 
-The default profile keeps the existing app-data directory. Named profiles use
-their own database, documents, staging, runtime descriptor, and lifecycle lock
-below `planview/profiles/<name>`.
-
-On POSIX, Planview creates the app-data and runtime directories as `0700`,
-requires them to be owned by the current UID, and writes the descriptor and
-single lifecycle lock as `0600` files owned by that UID. Runtime state must remain below
-the Planview app-data directory. The loopback listener also requires its random
-secret for lifecycle, publish, and cleanup management endpoints. Published
-document ids are served directly as HTML without an application wrapper. A page
-bundle redirects `/<id>` to `/<id>/`, serves its root `index.html`, and serves
-validated asset paths below that URL. Missing documents or bundle entries return
-HTML 404 responses and other methods return 405. Startup
-reconciles interrupted publication state and metadata/file inconsistencies before
-readiness. The same authenticated cleanup policy removes snapshots whose
-`lastAccessedAt` is older than the fixed 30-day retention window at startup and
-every 24 hours.
-
-Windows privacy is deliberately described honestly. Node does not provide a
-portable API here to inspect or enforce NTFS ACLs or to classify every reparse
-point, and its `mode`/`chmod` values are not an ACL guarantee. Under the PRD's
-single-user local trust model, Windows deployments must provision an
-account-owned app-data directory that is not writable by other users. Planview
-claims loopback binding and authenticated lifecycle requests, but does not
-claim that its Node-only checks enforce Windows filesystem privacy against a
-hostile local user.
+On POSIX, app-data and runtime directories are owner-checked and restricted with
+`0700`; sensitive files use `0600`. The loopback management API also requires a
+random secret. Windows privacy is not enforced by Node mode bits: users must
+provision an account-owned app-data directory that other users cannot write.
+Planview claims loopback binding and authenticated lifecycle requests, not
+Windows ACL enforcement against a hostile local user.

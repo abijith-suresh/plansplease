@@ -4,6 +4,9 @@ description: What account access protects, what is public during alpha, and the 
 ---
 ## Cloud alpha
 
+Hosted services are currently offline; see [hosted availability](../planned-features/)
+and use the [local workspace](../development/#full-local-workspace) for testing.
+
 The workspace checks who owns a document before listing, reading, or deleting
 it through the app. MCP tools are scoped to the account that authorized the client.
 
@@ -12,9 +15,8 @@ an object URL can fetch its bytes without your workspace session. Account checks
 and sandboxing do not make those stored objects private. Use non-sensitive test
 content when trying the product with friends.
 
-An explicit unlisted sharing feature is under review. Its proposal is different
-from search visibility or per-recipient permissions. Do not rely on it until
-its implementation is merged and deployed.
+Unlisted sharing is not available; see the
+[features reference](../planned-features/) for its proposal status.
 
 ## Rendering
 
@@ -32,20 +34,21 @@ viewer's browser.
 | --- | --- |
 | Local HTML or encoded artifact folder | 10 MiB per snapshot |
 | Files in a local artifact folder | 512, with root `index.html` |
-| Current cloud standalone HTML upload | 8 MiB of encoded bytes |
+| Cloud HTML or artifact bundle | 8 MiB of encoded bytes |
 | MCP document read | 32,768 characters per call |
 | MCP document list | 50 records per page maximum |
-| Account quota implementation | Configurable; defaults to 500,000,000 bytes |
+| Local committed snapshots | 1 GiB logical quota, including 4 KiB per document for metadata |
+| Cloud account quota implementation | Configurable; defaults to 500,000,000 bytes |
 
-The 500 MB quota is merged into the repository but not deployed to staging at
-this documentation review on **2 October 2026**. It counts stored files,
-reservations, pending deletion, and unresolved provider outcomes. It releases
-charged capacity only when cleanup is confirmed. The object limit uses binary
-MiB; the account default uses decimal MB.
+The local quota counts published HTML bytes plus a fixed metadata allowance; it
+is a logical limit, not a bound on physical disk use. The cloud quota counts
+stored files, reservations, pending deletion, and unresolved provider outcomes.
+It releases charged capacity only after cleanup is confirmed. The object limit
+uses binary MiB; the cloud account default uses decimal MB. See
+[hosted availability](../planned-features/) before relying on cloud services.
 
-Paid plans and unlimited storage are not available or promised. Cloud bundles on main count their complete encoded object, including the manifest,
-against the same quota. They require the matching app/backend release and are not
-yet deployed.
+Paid plans and unlimited storage are not available or promised. A cloud bundle's
+complete encoded object, including its manifest, counts against the same quota.
 
 ## Local retention and deletion
 

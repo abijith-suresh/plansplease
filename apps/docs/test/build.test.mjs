@@ -13,6 +13,15 @@ const files = (directory) =>
     const path = join(directory, entry.name);
     return entry.isDirectory() ? files(path) : [path];
   });
+const publicFragmentIds = [
+  ["guides/cli/index.html", "cloud-artifact-folders-on-main"],
+  ["guides/cloud/index.html", "what-is-available-in-staging"],
+  ["guides/mcp/index.html", "add-the-remote-server"],
+  ["reference/planned-features/index.html", "current-staging-workflows"],
+  ["reference/planned-features/index.html", "merged-changes"],
+  ["reference/planned-features/index.html", "open-implementations"],
+  ["reference/planned-features/index.html", "proposals-only"],
+];
 
 test("public URL configuration keeps docs prefixes and rejects unsafe deployment URLs", () => {
   const urls = readPublicUrls({
@@ -105,8 +114,12 @@ test("production root and prefixed builds contain complete navigation, search, a
           }
         }
       }
+      for (const [page, id] of publicFragmentIds) {
+        const html = readFileSync(join(output, page), "utf8");
+        assert.ok(html.includes(`id="${id}"`), `public fragment #${id} in ${page} at ${base}`);
+      }
       const mcp = readFileSync(join(output, "guides", "mcp", "index.html"), "utf8");
-      assert.ok(mcp.includes("https://workspace.example.com/mcp"));
+      assert.ok(mcp.includes("http://127.0.0.1:3000/mcp"));
       const source = readFileSync(resolve(root, "../app/src/lib/hosted-mcp-server.ts"), "utf8");
       const tools = [...source.matchAll(/registerTool\(\s*"([^"]+)"/g)];
       assert.ok(tools.length > 0, "hosted MCP server registers tools");
@@ -114,7 +127,7 @@ test("production root and prefixed builds contain complete navigation, search, a
       const guide = readFileSync(join(output, "guides", "install-cli", "index.html"), "utf8");
       assert.ok(guide.includes("not published to npm"));
       assert.ok(guide.includes("pack-destination"));
-      assert.ok(guide.includes("https://workspace.example.com"));
+      assert.ok(guide.includes("http://127.0.0.1:3000"));
       const cliPackage = JSON.parse(readFileSync(resolve(root, "../cli/package.json"), "utf8"));
       const installSource = readFileSync(
         resolve(root, "src/content/docs/guides/install-cli.mdx"),
@@ -128,7 +141,10 @@ test("production root and prefixed builds contain complete navigation, search, a
       assert.ok(command, "CLI exposes a command");
       assert.ok(installSource.includes(`${command} --version`), "installation uses the actual bin");
       const home = readFileSync(join(output, "index.html"), "utf8");
-      assert.ok(home.includes("https://product.example.com"));
+      assert.ok(!home.includes("https://workspace.example.com"));
+      assert.ok(!home.includes("https://product.example.com"));
+      assert.ok(home.includes(`href="${base}reference/planned-features/"`));
+      assert.ok(home.includes(`href="${base}reference/development/#full-local-workspace"`));
       for (const route of ["install-cli", "mcp", "self-hosting"])
         assert.ok(home.includes(`href="${base}guides/${route}/"`), `setup route ${route}`);
     } finally {

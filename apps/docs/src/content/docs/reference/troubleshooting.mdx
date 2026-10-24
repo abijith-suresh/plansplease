@@ -24,25 +24,24 @@ again with the current app origin. Operators should check that the app and Conve
 share `SITE_URL`, and that the GitHub OAuth callback is
 `<app-origin>/api/auth/callback/github`.
 
-The sign-in/sign-out redirect helpers merged with the app redesign in
-[#120](https://github.com/abijith-suresh/planview/pull/120). Check that your deployed
-app includes them. A successful dashboard login does not by itself verify every
-site/app redirect.
-
 ## CLI says the cloud credential was rejected
 
 <Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}`} lang="sh" />
 
 The saved credential is account-, profile-, and origin-specific. It permits
 uploads only. Browser sign-in does not repair or revoke a separate CLI credential.
-Logout must contact the app to revoke the saved credential.
+Logout contacts the app to revoke the saved credential before deleting it, so it
+needs a connection. Hosted services are currently offline; use the
+[local workspace](../development/#full-local-workspace) or check
+[hosted availability](../planned-features/).
 
 ## An upload is rejected
 
 Check the UTF-8 byte size, not just character count: cloud HTML is limited to
-8 MiB. Current cloud uploads accept standalone HTML; folder uploads belong to a
-feature under review. A deployed quota-enabled backend can also reject an
-account that lacks available capacity, including pending cleanup bytes.
+8 MiB. Cloud uploads accept standalone HTML and artifact folders. A quota-enabled
+backend can reject an account that lacks available capacity, including pending
+cleanup bytes. Hosted service availability is in the
+[features reference](../planned-features/).
 
 A temporary provider failure may leave charged capacity until reconciliation.
 Do not retry repeatedly with a large document without checking the workspace

@@ -38,20 +38,23 @@ plansplease publish ./site
 plansplease publish --open ./site
 
 # Sign in, then upload an HTML page or a folder containing index.html
-plansplease login
+plansplease login --cloud-url http://127.0.0.1:3000
 plansplease upload ./report.html
 plansplease upload ./artifact/
-# https://plansplease-app-staging.up.railway.app/api/documents/<id>
+# http://127.0.0.1:3000/api/documents/<id>
 
 # Keep a feature build separate from the default installation
 plansplease --profile feature publish ./site
 
 ```
 
-The current staging app is `https://plansplease-app-staging.up.railway.app`.
-The CLI recognizes its previous Railway hostname and uses the replacement origin
-for saved staging credentials, including upload and logout. This does not change
-credentials for custom cloud origins or send them to an environment override.
+The CLI's default app URL is the paused staging service; use the explicit local
+URL above for local testing. The [local development guide](../docs/src/content/docs/reference/development.mdx#full-local-workspace)
+explains local account setup. The CLI recognizes its previous Railway hostname
+and uses the replacement origin for saved staging credentials, including upload
+and logout. This does not change credentials for custom cloud origins or send
+them to an environment override.
+Hosted services are currently offline; see the [features reference](../docs/src/content/docs/reference/planned-features.md).
 
 Get help for the whole CLI or for one command:
 
@@ -103,19 +106,20 @@ normal publish result and adds the browser-opening side effect.
 
 ## Cloud uploads
 
-`plansplease login` opens GitHub sign-in in a browser and asks you to authorize the
-local CLI. The CLI stores the cloud credential in the selected profile's
+`plansplease login` opens the selected app's account sign-in in a browser and
+asks you to authorize the local CLI. Hosted sign-in uses GitHub; the local
+workspace uses its local test account. The CLI stores the credential in the selected profile's
 Planview data directory. On POSIX systems the directory is mode `0700` and the
 credential file is mode `0600`. The credential permits cloud uploads only and
 stays valid until revoked. `plansplease logout` revokes it on the cloud service,
 then removes the local file; it needs a connection to complete. Renaming the
 command does not require signing in again.
 Set `PLANVIEW_CLOUD_URL` or pass `--cloud-url <origin>` to `plansplease login` to
-use another cloud app. The alpha default is
-`https://plansplease-app-staging.up.railway.app`.
+use another cloud app. Use `http://127.0.0.1:3000` for local testing. Hosted
+availability is tracked in the [features reference](../docs/src/content/docs/reference/planned-features.md).
 
-`plansplease upload <file.html>` accepts one standalone `.html` file up to 8 MiB
-and returns its workspace preview link. The preview requires the same account to
+`plansplease upload <file.html>` accepts one standalone `.html` file or an
+artifact folder up to 8 MiB and returns its workspace preview link. The preview requires the same account to
 be signed in in the browser; it is not an anonymous share link. Use `--open` to
 open the returned link or `--json` to print the document ID and URL.
 
@@ -176,8 +180,8 @@ On POSIX, the app-data and runtime directories are owned by the current UID and
 protected with `0700`; descriptor and lock files are owned by that UID and
 protected with `0600`. Windows does not expose a portable Node API for enforcing
 NTFS ACLs or classifying every reparse point, so those mode values are not a
-Windows privacy guarantee. Consistent with the PRD's single-user local trust
-model, Windows users must provision an account-owned, non-user-writable app-data
+Windows privacy guarantee. Under the single-user local trust model, Windows
+users must provision an account-owned, non-user-writable app-data
 directory. Planview claims loopback binding and authenticated lifecycle
 requests, not hostile-local-user filesystem isolation on Windows.
 

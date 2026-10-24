@@ -49,12 +49,14 @@ Publish an immutable HTML snapshot and print its URL. Use
 to open the URL in the default browser.
 .TP
 .B login [options]
-Sign in to the cloud workspace through GitHub in a browser. Use
+Open the selected app's account sign-in in a browser and authorize this computer.
+Hosted apps use GitHub sign-in; the local workspace uses its local test account. Use
 .B \-\-cloud-url origin
 to sign in to another app origin.
 .TP
 .B logout
-Remove the saved cloud sign-in from this computer.
+Revoke the saved cloud sign-in on the app, then remove it from this computer.
+Revocation requires a connection.
 .TP
 .B upload [options] file.html|folder
 Upload an HTML file or artifact folder and print its workspace preview URL. Folders require index.html, at most 512 files, and 8 MiB including the manifest.
@@ -177,7 +179,7 @@ The command could not complete, or its arguments were invalid.
 .EX
 plansplease publish ./report.html
 plansplease publish --open ./site
-plansplease login
+plansplease login --cloud-url http://127.0.0.1:3000
 plansplease upload ./report.html
 plansplease logout
 plansplease get http://localhost:4777/<id> > report.html

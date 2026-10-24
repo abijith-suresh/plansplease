@@ -16,7 +16,7 @@ User-facing changes to the public `@abijith-suresh/planview` package need a
 Changeset. Run `npm run changeset`, select `@abijith-suresh/planview`, and choose
 `patch`. Until the package reaches `1.0.0`, Planview uses patch-only releases. The automated
 `npm run release-policy` check enforces that rule for pending Changesets; it
-ignores Changesets' README/config files and entries for other (including
+ignores Changesets' config and entries for other (including
 private) packages.
 
 Keep the published package name as `@abijith-suresh/planview` (`apps/cli/package.json`);
