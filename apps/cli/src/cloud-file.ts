@@ -1,6 +1,7 @@
 import type { FileHandle } from "node:fs/promises";
+import { cloudDocumentMaxBytes } from "@planview/core/cloud-policy";
 
-export const MAX_HTML_SIZE_BYTES = 8 * 1024 * 1024;
+export const MAX_HTML_SIZE_BYTES = cloudDocumentMaxBytes;
 const READ_CHUNK_SIZE_BYTES = 64 * 1024;
 
 type UploadFileReader = Pick<FileHandle, "read" | "stat">;

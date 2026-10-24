@@ -1,4 +1,5 @@
 import { cliCredentialFromRequest } from "./cli-credential.ts";
+import { isConvexConfigurationError } from "./convex-configuration-error.ts";
 
 export type CliSessionHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{
@@ -42,7 +43,7 @@ export function createCliSessionHandler<Client>(
       await dependencies.issueCredential(client, credential.tokenHash);
       return Response.json({ token: credential.secret }, { headers: privateHeaders });
     } catch (error) {
-      if (error instanceof Error && error.message === "Convex is not configured") {
+      if (isConvexConfigurationError(error)) {
         const response = dependencies.missingServerConfigurationResponse();
         for (const [name, value] of Object.entries(privateHeaders))
           response.headers.set(name, value);

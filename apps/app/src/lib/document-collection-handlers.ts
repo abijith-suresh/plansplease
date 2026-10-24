@@ -1,3 +1,5 @@
+import { isConvexConfigurationError } from "./convex-configuration-error.ts";
+
 export type DocumentCollectionHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{
     client: Client;
@@ -45,7 +47,7 @@ export function createDocumentCollectionHandlers<Client>(
           : await dependencies.listDocuments(client)
       );
     } catch (error) {
-      return error instanceof Error && error.message === "Convex is not configured"
+      return isConvexConfigurationError(error)
         ? dependencies.missingServerConfigurationResponse()
         : dependencies.errorResponse(error);
     }

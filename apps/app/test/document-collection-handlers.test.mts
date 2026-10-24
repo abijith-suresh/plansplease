@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ConvexConfigurationError } from "../src/lib/convex-configuration-error.ts";
 
 import {
   createDocumentCollectionHandlers,
@@ -116,13 +117,23 @@ test("does not list documents without an authenticated token", async () => {
 test("maps list failures through the configured error responses", async () => {
   const configurationHandlers = createHandlers({
     getAuthedClient: async () => {
-      throw new Error("Convex is not configured");
+      throw new ConvexConfigurationError();
     },
   });
   const configurationResponse = await configurationHandlers.handlers.GET({ request: getRequest() });
 
   assert.equal(configurationResponse.status, 503);
   assert.deepEqual(await configurationResponse.json(), { error: "backend unavailable" });
+
+  const sameMessageFailureHandlers = createHandlers({
+    getAuthedClient: async () => {
+      throw new Error("Convex is not configured");
+    },
+  });
+  const sameMessageResponse = await sameMessageFailureHandlers.handlers.GET({
+    request: getRequest(),
+  });
+  assert.equal(sameMessageResponse.status, 500);
 
   const failureHandlers = createHandlers({
     listDocuments: async () => {

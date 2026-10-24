@@ -1,5 +1,6 @@
 import { isLocalDevelopment } from "../../convex/localMode.ts";
 import { initializeDocumentPreview, readPreviewDocument } from "./document-preview-client.ts";
+import { cloudDocumentMaxBytes } from "@planview/core/cloud-policy";
 
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (character) => {
@@ -58,7 +59,7 @@ function renderDocumentPreview(readUrl: string, title: string, localOrigin?: str
   }
   const serializedUrl = JSON.stringify(url.href).replace(/</g, "\\u003c");
   const safeTitle = escapeHtml(title);
-  const script = `(${initializeDocumentPreview.toString()})(${serializedUrl},8388608,${readPreviewDocument.toString()});`;
+  const script = `(${initializeDocumentPreview.toString()})(${serializedUrl},${cloudDocumentMaxBytes},${readPreviewDocument.toString()});`;
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${safeTitle} | plansplease</title>
 <style>html,body{height:100%;margin:0;color-scheme:dark}body{background:#0c0c0e;color:#d9d9dc;font-family:ui-sans-serif,sans-serif}iframe{background:#fff;width:100%;height:100%;height:100dvh;border:0;display:block}#preview-state{height:100%;display:grid;place-content:center;justify-items:center;gap:1rem;padding:1.5rem;box-sizing:border-box;text-align:center}p{margin:0;max-width:30rem;font-size:.95rem;line-height:1.5}button{font:inherit;color:inherit;background:transparent;border:1px solid #343439;border-radius:.35rem;padding:.6rem 1rem;min-height:44px;cursor:pointer;touch-action:manipulation}button:hover{border-color:#e5795a}button:focus-visible{outline:2px solid #e5795a;outline-offset:4px}[hidden]{display:none!important}</style></head>

@@ -1,4 +1,9 @@
 import { createSignal, Show } from "solid-js";
+import {
+  cloudDocumentMaxBytes,
+  cloudDocumentTitleMaxLength,
+  cloudDocumentTitleMinLength,
+} from "@planview/core/cloud-policy";
 import { getErrorMessage } from "~/lib/documents";
 
 export default function DocumentUpload(props: {
@@ -12,13 +17,14 @@ export default function DocumentUpload(props: {
   const [title, setTitle] = createSignal("");
   const chooseFile = (value: File | undefined) => {
     setError("");
-    if (value && (!/\.(html|planview)$/i.test(value.name) || value.size > 8 * 1024 * 1024)) {
+    if (value && (!/\.(html|planview)$/i.test(value.name) || value.size > cloudDocumentMaxBytes)) {
       setFile(undefined);
       setError("Choose an HTML file or .planview bundle up to 8 MiB.");
       return;
     }
     setFile(value);
-    if (value) setTitle(value.name.replace(/\.(html|planview)$/i, "").slice(0, 200));
+    if (value)
+      setTitle(value.name.replace(/\.(html|planview)$/i, "").slice(0, cloudDocumentTitleMaxLength));
   };
   const upload = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -101,7 +107,8 @@ export default function DocumentUpload(props: {
             class="search-input"
             value={title()}
             required
-            maxlength={200}
+            minlength={cloudDocumentTitleMinLength}
+            maxlength={cloudDocumentTitleMaxLength}
             disabled={pending()}
             onInput={(event) => setTitle(event.currentTarget.value)}
           />

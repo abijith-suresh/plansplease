@@ -3,6 +3,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 
 import { ConvexTokenServiceError, fetchConvexToken } from "./convex-token";
+import { ConvexConfigurationError } from "./convex-configuration-error";
 
 const convexUrl = process.env["CONVEX_URL"] ?? process.env["VITE_CONVEX_URL"];
 export const convexSiteUrl = process.env["CONVEX_SITE_URL"] ?? process.env["VITE_CONVEX_SITE_URL"];
@@ -11,7 +12,7 @@ export { api };
 
 const requireConvexConfiguration = () => {
   if (!convexUrl || !convexSiteUrl) {
-    throw new Error("Convex is not configured");
+    throw new ConvexConfigurationError();
   }
   return { convexUrl, convexSiteUrl };
 };

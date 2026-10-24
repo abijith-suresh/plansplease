@@ -6,6 +6,7 @@ import {
   createCliSessionHandler,
 } from "../src/lib/cli-session-handler.ts";
 import { hashCliCredential } from "../src/lib/cli-credential.ts";
+import { ConvexConfigurationError } from "../src/lib/convex-configuration-error.ts";
 
 const privateHeaders = {
   "Cache-Control": "private, no-store",
@@ -87,7 +88,7 @@ test("does not issue a CLI credential when the current user is missing", async (
 test("applies private no-store headers to configuration and general error responses", async () => {
   const configurationHandler = createHandler({
     getAuthedClient: async () => {
-      throw new Error("Convex is not configured");
+      throw new ConvexConfigurationError();
     },
   }).handler;
   const configurationResponse = await configurationHandler({

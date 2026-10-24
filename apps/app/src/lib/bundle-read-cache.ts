@@ -1,4 +1,5 @@
 import { parseCloudBundle, cloudBundleMaxBytes, type CloudBundle } from "./cloud-bundle.ts";
+import { readBoundedResponseBytes } from "./bounded-response.ts";
 
 // Keep only two loaded objects and two fetches in progress. Entry requests still
 // authorize metadata before touching this cache. Failed/expired loads are removed.
@@ -30,36 +31,12 @@ export function createBundleReadCache(now = Date.now) {
 }
 
 export async function readBoundedBundle(response: Response): Promise<Uint8Array> {
-  if (!response.ok || !response.body) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error("Bundle content is unavailable");
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    if (Number(response.headers.get("content-length")) > cloudBundleMaxBytes)
-      throw new Error("Bundle content exceeds 8 MiB");
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > cloudBundleMaxBytes) throw new Error("Bundle content exceeds 8 MiB");
-      chunks.push(value);
-    }
-  } catch (error) {
-    await reader.cancel().catch(() => undefined);
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  return readBoundedResponseBytes(response, {
+    maxBytes: cloudBundleMaxBytes,
+    unavailableMessage: "Bundle content is unavailable",
+    tooLargeMessage: "Bundle content exceeds 8 MiB",
+    checkContentLength: true,
+  });
 }
 
 export const serverBundleReadCache = createBundleReadCache();

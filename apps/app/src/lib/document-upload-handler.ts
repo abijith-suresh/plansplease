@@ -1,4 +1,10 @@
 import { cloudBundleContentType, parseCloudBundle } from "./cloud-bundle.ts";
+import {
+  cloudDocumentMaxBytes,
+  cloudDocumentTitleMaxLength,
+  cloudDocumentTitleMinLength,
+} from "@planview/core/cloud-policy";
+import { isConvexConfigurationError } from "./convex-configuration-error.ts";
 
 import {
   uploadReservedDocument,
@@ -41,7 +47,7 @@ export type DocumentUploadHandlerDependencies<Client> = {
   errorResponse(error: unknown): Response;
 };
 
-const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = cloudDocumentMaxBytes;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 64 * 1024;
 
 async function readBoundedFormData(request: Request): Promise<FormData | null> {
@@ -141,8 +147,8 @@ export function createDocumentUploadHandler<Client>(
         !(file instanceof File) ||
         (!bundle && (!file.name.toLowerCase().endsWith(".html") || file.type !== "text/html")) ||
         file.size > MAX_FILE_SIZE_BYTES ||
-        title.length === 0 ||
-        title.length > 200
+        title.length < cloudDocumentTitleMinLength ||
+        title.length > cloudDocumentTitleMaxLength
       ) {
         return Response.json(
           {
@@ -190,7 +196,7 @@ export function createDocumentUploadHandler<Client>(
 
       return Response.json({ id }, { status: 201 });
     } catch (error) {
-      if (error instanceof Error && error.message === "Convex is not configured") {
+      if (isConvexConfigurationError(error)) {
         return dependencies.missingServerConfigurationResponse();
       }
 

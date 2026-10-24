@@ -1,5 +1,6 @@
 import type { DocumentStorageAdapter } from "./document-storage.js";
 import { documentPreviewResponse, localDocumentPreviewResponse } from "./document-preview.ts";
+import { isConvexConfigurationError } from "./convex-configuration-error.ts";
 
 export type DocumentAccessRecord = Readonly<{
   readonly contentType: string;
@@ -31,7 +32,7 @@ const errorResponse = <Client>(
   dependencies: DocumentAccessHandlerDependencies<Client>,
   error: unknown
 ) =>
-  error instanceof Error && error.message === "Convex is not configured"
+  isConvexConfigurationError(error)
     ? dependencies.missingServerConfigurationResponse()
     : dependencies.errorResponse(error);
 

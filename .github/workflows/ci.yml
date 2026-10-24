@@ -156,11 +156,8 @@ jobs:
           npm pack --workspace @abijith-suresh/planview --pack-destination "$RUNNER_TEMP" --json > "$RUNNER_TEMP/pack.json"
           tarball="$(node --input-type=module -e '
             import { readFileSync } from "node:fs";
-            const packages = JSON.parse(readFileSync(process.argv[1], "utf8"));
-            if (packages.length !== 1 || !packages[0].filename) {
-              throw new Error("npm pack did not produce exactly one tarball");
-            }
-            console.log(packages[0].filename);
+            import { npmPackFilename } from "./scripts/npm-pack-result.mjs";
+            console.log(npmPackFilename(JSON.parse(readFileSync(process.argv[1], "utf8"))));
           ' "$RUNNER_TEMP/pack.json")"
           echo "tarball=$RUNNER_TEMP/$tarball" >> "$GITHUB_OUTPUT"
 

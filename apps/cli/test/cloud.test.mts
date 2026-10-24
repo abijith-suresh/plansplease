@@ -1,24 +1,25 @@
 import assert from "node:assert/strict";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   chmodSync,
   existsSync,
   lstatSync,
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
+  type Stats,
   symlinkSync,
   writeFileSync,
-  type Stats,
 } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { cloudDocumentTitleMaxLength } from "@planview/core/cloud-policy";
 import { resolveAppDataPaths } from "@planview/local";
-import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "../dist/cloud-file.js";
 import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "../dist/cloud.js";
+import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "../dist/cloud-file.js";
 
 const collectRequest = async (request: IncomingMessage) => {
   const chunks: Buffer[] = [];
@@ -274,6 +275,15 @@ test("cloud login callback and upload preserve the local protocol", async () => 
       assert.match(
         uploadRequests[0]?.body ?? "",
         /filename="Project plan\.HTML"\r\nContent-Type: text\/html\r\n\r\n<!doctype html><title>Plan<\/title>/
+      );
+
+      await uploadCloudDocument(sourcePath, "cloud-test", {
+        title: "x".repeat(cloudDocumentTitleMaxLength + 5),
+      });
+      assert.ok(
+        uploadRequests[1]?.body?.includes(
+          `name="title"\r\n\r\n${"x".repeat(cloudDocumentTitleMaxLength)}\r\n`
+        )
       );
 
       responseMode = "expired";

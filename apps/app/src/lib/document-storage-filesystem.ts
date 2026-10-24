@@ -2,6 +2,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { cloudDocumentMaxBytes } from "@planview/core/cloud-policy";
 
 import { isFilesystemKey, isLocalDevelopment } from "../../convex/localMode.ts";
 import type { DocumentStorageAdapter } from "./document-storage.ts";
@@ -73,7 +74,7 @@ export function createFilesystemStorage(
           throw new Error("The upload reservation expired. Try uploading again.");
       };
       checkDeadline();
-      if (file.size > 8 * 1024 * 1024) throw new Error("Document exceeds 8 MiB");
+      if (file.size > cloudDocumentMaxBytes) throw new Error("Document exceeds 8 MiB");
       await prepare();
       const temporary = join(root, `${randomUUID()}.tmp`);
       const handle = await open(temporary, "wx", 0o600);
@@ -101,7 +102,7 @@ export function createFilesystemStorage(
       const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
       try {
         const info = await handle.stat();
-        if (!info.isFile() || info.size > 8 * 1024 * 1024)
+        if (!info.isFile() || info.size > cloudDocumentMaxBytes)
           throw new Error("Invalid local storage object");
         return new Uint8Array(await handle.readFile());
       } finally {

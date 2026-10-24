@@ -23,9 +23,14 @@ import {
 } from "./storageQuota.ts";
 
 import { isLocalDevelopment, isFilesystemKey } from "./localMode.ts";
+import {
+  cloudDocumentMaxBytes,
+  cloudDocumentTitleMaxLength,
+  cloudDocumentTitleMinLength,
+} from "@planview/core/cloud-policy";
 
 const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
-const maxHtmlSizeBytes = 8 * 1024 * 1024;
+const maxHtmlSizeBytes = cloudDocumentMaxBytes;
 const proofValidator = v.object({ expiresAt: v.number(), signature: v.string() });
 const createArgs = {
   title: v.string(),
@@ -126,8 +131,8 @@ export const verifyUploadInput = async (ownerId: string, args: CreateArgs) => {
   if (
     !validLocator ||
     (args.contentType !== "text/html" && args.contentType !== "application/vnd.planview.bundle") ||
-    args.title.trim().length === 0 ||
-    args.title.length > 200 ||
+    args.title.trim().length < cloudDocumentTitleMinLength ||
+    args.title.length > cloudDocumentTitleMaxLength ||
     !Number.isSafeInteger(args.sizeBytes) ||
     args.sizeBytes < 0 ||
     args.sizeBytes > maxHtmlSizeBytes

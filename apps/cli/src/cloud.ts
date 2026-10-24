@@ -1,9 +1,13 @@
-import { parseCloudBundle } from "@planview/core/cloud-bundle";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, type FileHandle, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { basename, join } from "node:path";
+import { parseCloudBundle } from "@planview/core/cloud-bundle";
+import {
+  cloudDocumentTitleMaxLength,
+  cloudDocumentTitleMinLength,
+} from "@planview/core/cloud-policy";
 import { preparePublishSource, resolveAppDataPaths } from "@planview/local";
 import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "./cloud-file.js";
 
@@ -502,9 +506,11 @@ export const uploadCloudDocument = async (
     type: options.bundle ? "application/vnd.planview.bundle" : "text/html",
     lastModified: openedStats.mtimeMs,
   });
+  const candidateTitle = (options.title ?? basename(sourcePath).replace(/\.html$/i, ""))
+    .trim()
+    .slice(0, cloudDocumentTitleMaxLength);
   const title =
-    (options.title ?? basename(sourcePath).replace(/\.html$/i, "")).trim().slice(0, 200) ||
-    "Untitled HTML";
+    candidateTitle.length >= cloudDocumentTitleMinLength ? candidateTitle : "Untitled HTML";
   const formData = new FormData();
   formData.set("file", file);
   formData.set("title", title);

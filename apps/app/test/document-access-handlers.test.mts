@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ConvexConfigurationError } from "../src/lib/convex-configuration-error.ts";
 
 import {
   createDocumentDeleteHandler,
@@ -171,6 +172,17 @@ test("maps storage URL lookup rejection through the route error handler", async 
   const response = await preview(event());
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: "storage URL lookup failed" });
+});
+
+test("maps explicit Convex configuration failures to 503 for access routes", async () => {
+  const { preview } = createHandlers({
+    getAuthedClient: async () => {
+      throw new ConvexConfigurationError();
+    },
+  });
+  const response = await preview(event());
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "backend unavailable" });
 });
 
 test("proxies legacy Convex-backed documents with the authenticated token", async () => {
