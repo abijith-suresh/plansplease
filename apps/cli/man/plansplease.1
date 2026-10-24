@@ -79,17 +79,20 @@ Restart the local daemon.
 .B clean [options]
 Remove expired snapshots and reconcile incomplete storage operations.
 .TP
-.B skills install [options]
-Install the bundled
-.B planview
-and
-.B create-html
-Agent Skills into
-.B ~/.agents/skills
-.
-.TP
 .B help [command]
 Show help for the whole CLI or for one command.
+.SH AGENT SKILLS
+Install Planview's skills with the Vercel Skills CLI from a project directory:
+.EX
+npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
+.EE
+From a Planview checkout, use
+.B npx skills add ./apps/cli/skills
+instead. Skills CLI installs to the project by default; use
+.B \-g
+for optional user-wide installation. Use
+.B \-a codex \-y
+for a non-interactive Codex install.
 .SH OPTIONS
 .TP
 .B \-h, \-\-help
@@ -139,11 +142,6 @@ and
 .B upload
 .
 .TP
-.B \-\-force
-Replace existing skill directories when used with
-.B skills install
-.
-.TP
 .B \-\-
 Stop option parsing. Text after this marker is treated as an operand.
 .SH OUTPUT
@@ -168,11 +166,6 @@ Default application data directory on supported Unix systems.
 .TP
 .B ~/.local/share/planview/profiles/name
 Application data directory for a named profile on supported Unix systems.
-.TP
-.B ~/.agents/skills
-Destination used by
-.B skills install
-.
 .SH EXIT STATUS
 .TP
 .B 0

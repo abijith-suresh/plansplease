@@ -18,7 +18,6 @@ export type ArgumentParsingError = UnknownOptionError | InvalidOptionValueError;
 type ParsedArguments = Readonly<{
   readonly help: boolean;
   readonly json: boolean;
-  readonly force: boolean;
   readonly open: boolean;
   readonly cloudUrl?: string;
   readonly operands: readonly string[];
@@ -30,7 +29,6 @@ type ParsedGlobalArguments = Readonly<{
 }>;
 
 type OptionParserOptions = Readonly<{
-  readonly allowForce?: boolean;
   readonly allowCloudUrl?: boolean;
   readonly allowJson?: boolean;
   readonly allowOpen?: boolean;
@@ -65,7 +63,6 @@ export const parseOptions = (
   let optionsEnded = false;
   let help = false;
   let json = false;
-  let force = false;
   let open = false;
   let cloudUrl: string | undefined;
   const operands: string[] = [];
@@ -97,14 +94,6 @@ export const parseOptions = (
         return Effect.fail(unknownOption(argument, options.helpTopic));
       }
       open = true;
-      continue;
-    }
-
-    if (!optionsEnded && argument === "--force") {
-      if (options.allowForce !== true) {
-        return Effect.fail(unknownOption(argument, options.helpTopic));
-      }
-      force = true;
       continue;
     }
 
@@ -152,7 +141,6 @@ export const parseOptions = (
   return Effect.succeed({
     help,
     json,
-    force,
     open,
     ...(cloudUrl === undefined ? {} : { cloudUrl }),
     operands,

@@ -174,12 +174,14 @@ jobs:
           npm install --global --prefix "$install_dir" --ignore-scripts "$TARBALL"
           "$install_dir/bin/plansplease" --help
           "$install_dir/bin/plansplease" --version
-          home_dir="$RUNNER_TEMP/planview-skill-home"
-          test ! -e "$home_dir"
-          HOME="$home_dir" USERPROFILE="$home_dir" "$install_dir/bin/plansplease" skills install
-          test -f "$home_dir/.agents/skills/planview/SKILL.md"
-          test -f "$home_dir/.agents/skills/create-html/SKILL.md"
-          test -f "$home_dir/.agents/skills/create-html/references/browser-native-patterns.md"
+          skills_project="$RUNNER_TEMP/planview-skills-project"
+          mkdir -p "$skills_project"
+          cd "$skills_project"
+          DISABLE_TELEMETRY=1 DO_NOT_TRACK=1 npx --yes skills add "$GITHUB_WORKSPACE/apps/cli/skills" -a codex -y --copy
+          test -f "$skills_project/.agents/skills/planview/SKILL.md"
+          test -f "$skills_project/.agents/skills/create-html/SKILL.md"
+          test -f "$skills_project/.agents/skills/create-html/references/browser-native-patterns.md"
+
 
   cross-platform-packed-smoke:
     name: packed CLI smoke (${{ matrix.os }})
@@ -220,7 +222,7 @@ jobs:
       - name: Install dependencies without lifecycle scripts
         run: npm ci --ignore-scripts
 
-      - name: Pack from clean build outputs and run CLI lifecycle and skills smoke
+      - name: Pack from clean build outputs and run CLI lifecycle smoke
         run: node scripts/cross-platform-smoke.mjs
 
       - name: Test cloud CLI flow

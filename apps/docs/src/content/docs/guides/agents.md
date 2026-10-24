@@ -14,15 +14,21 @@ sharing feature on `main` today.
 
 ## Install the local skills
 
-After [installing the CLI](../install-cli/):
+Use the [Vercel Skills CLI](https://github.com/vercel-labs/skills) to install
+Planview's skills. From a project directory, the default installs them into that
+project:
 
 ```sh
-plansplease skills install
+npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
 ```
+
+From a Planview checkout, use `npx skills add ./apps/cli/skills`. Add `-g` only
+for optional user-wide installation across projects. Select an agent with
+`-a codex` (or another supported agent); add `-y` to skip prompts.
 
 The bundled `create-html` skill helps the agent write a usable standalone page.
 The `planview` skill explains publication, cloud uploads, and MCP tools. Your
-agent needs to discover Agent Skills in `~/.agents/skills`; support varies by client.
+agent needs to discover project Agent Skills; support varies by client.
 
 For a local plan:
 

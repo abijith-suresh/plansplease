@@ -241,17 +241,6 @@ const runSmoke = async () => {
     const after = execute(["status"]);
     assertSuccessful(after, "stopped packed CLI status");
     assert.match(text(after.stdout), /not running/);
-
-    const skills = execute(["skills", "install"]);
-    assertSuccessful(skills, "packed CLI skills install");
-    assert.match(text(skills.stdout), /Installed planview and create-html skills/);
-    assert.ok(existsSync(join(home, ".agents", "skills", "planview", "SKILL.md")));
-    assert.ok(existsSync(join(home, ".agents", "skills", "create-html", "SKILL.md")));
-    assert.ok(
-      existsSync(
-        join(home, ".agents", "skills", "create-html", "references", "browser-native-patterns.md")
-      )
-    );
   } finally {
     if (execute !== undefined) {
       execute(["stop"]);
