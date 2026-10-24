@@ -34,7 +34,7 @@ test("repository foundation has the expected configuration", () => {
   expectEqual(readText(".node-version").trim(), "24.19.0", ".node-version");
 
   const biome = readJson("biome.json");
-  expectEqual(biome.$schema, "https://biomejs.dev/schemas/2.5.7/schema.json", "Biome schema");
+  expectEqual(biome.$schema, "https://biomejs.dev/schemas/2.5.15/schema.json", "Biome schema");
   expectProperty(biome.vcs, "enabled", true, "Biome VCS enabled setting");
   expectProperty(biome.vcs, "clientKind", "git", "Biome VCS client kind");
   expectProperty(biome.vcs, "useIgnoreFile", true, "Biome VCS ignore-file setting");
@@ -142,7 +142,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(packageJson.engines, "node", ">=24.19.0 <25", "Node engine");
   expectProperty(packageJson.engines, "npm", ">=11.16.0", "npm engine");
   expectProperty(packageJson, "packageManager", "npm@11.16.0", "package manager");
-  expectProperty(packageJson.devDependencies, "@biomejs/biome", "2.5.7", "Biome dependency");
+  expectProperty(packageJson.devDependencies, "@biomejs/biome", "2.5.15", "Biome dependency");
   expectProperty(packageJson.devDependencies, "@changesets/cli", "2.31.1", "Changesets dependency");
   expectProperty(
     packageJson.devDependencies,
@@ -335,7 +335,7 @@ test("repository foundation has the expected configuration", () => {
       "@planview/core": "0.1.0",
       "@planview/daemon": "0.1.0",
       "@planview/storage": "0.1.0",
-      effect: "4.0.0",
+      effect: "4.0.6",
     },
     "local dependencies"
   );
@@ -452,7 +452,7 @@ test("repository foundation has the expected configuration", () => {
     },
     "storage clean-checkout typecheck compiler options"
   );
-  expectProperty(storagePackageJson.dependencies, "effect", "4.0.0", "storage Effect dependency");
+  expectProperty(storagePackageJson.dependencies, "effect", "4.0.6", "storage Effect dependency");
 
   const docsPackageJson = readJson("apps/docs/package.json");
   expectProperty(docsPackageJson, "name", "@planview/docs", "docs package name");

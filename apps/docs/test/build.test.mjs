@@ -107,9 +107,10 @@ test("production root and prefixed builds contain complete navigation, search, a
       }
       const mcp = readFileSync(join(output, "guides", "mcp", "index.html"), "utf8");
       assert.ok(mcp.includes("https://workspace.example.com/mcp"));
-      const source = readFileSync(resolve(root, "../app/src/lib/hosted-mcp.ts"), "utf8");
-      for (const [, tool] of source.matchAll(/registerTool\(\s*"([^"]+)"/g))
-        assert.ok(mcp.includes(tool), `documented main tool ${tool}`);
+      const source = readFileSync(resolve(root, "../app/src/lib/hosted-mcp-server.ts"), "utf8");
+      const tools = [...source.matchAll(/registerTool\(\s*"([^"]+)"/g)];
+      assert.ok(tools.length > 0, "hosted MCP server registers tools");
+      for (const [, tool] of tools) assert.ok(mcp.includes(tool), `documented main tool ${tool}`);
       const guide = readFileSync(join(output, "guides", "install-cli", "index.html"), "utf8");
       assert.ok(guide.includes("not published to npm"));
       assert.ok(guide.includes("pack-destination"));

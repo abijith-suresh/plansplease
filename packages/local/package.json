@@ -19,9 +19,9 @@
     "@planview/core": "0.1.0",
     "@planview/daemon": "0.1.0",
     "@planview/storage": "0.1.0",
-    "effect": "4.0.0"
+    "effect": "4.0.6"
   },
   "devDependencies": {
-    "@types/node": "24.10.1"
+    "@types/node": "24.19.2"
   }
 }
