@@ -1,132 +1,18 @@
 import { createMcpProtectedRequestHandler } from "@better-auth/mcp";
-import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
-import { z } from "zod";
+import { createMcpHandler } from "@modelcontextprotocol/server";
 
 import { createMcpDocumentService } from "./mcp-documents";
-import { presentMcpUpload } from "./mcp-document-links";
+import { createHostedMcpServer } from "./hosted-mcp-server";
 
 const siteUrl = process.env["SITE_URL"]?.replace(/\/$/, "");
 const resource = siteUrl ? `${siteUrl}/mcp` : undefined;
 const allowLegacyClients = process.env["MCP_ALLOW_LEGACY_CLIENTS"] === "true";
 
-const result = (value: unknown) => ({
-  content: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
-
-const runTool = async (name: string, operation: () => Promise<unknown>) => {
-  try {
-    return result(await operation());
-  } catch (error) {
-    console.error("mcp.tool_failed", {
-      name,
-      errorType: error instanceof Error ? error.name : "UnknownError",
-      at: error instanceof Error ? error.stack?.split("\n")[1]?.trim() : undefined,
-    });
-    throw error;
-  }
-};
-
 const handler = createMcpHandler(
   ({ authInfo }) => {
     const ownerId = authInfo?.extra?.["userId"];
     if (typeof ownerId !== "string" || !ownerId) throw new Error("MCP identity is missing");
-    const documents = createMcpDocumentService(ownerId);
-    const server = new McpServer({ name: "planview-cloud", version: "0.1.0" });
-
-    server.registerTool(
-      "list_documents",
-      {
-        description: "List your cloud documents, newest first. Use nextCursor to continue.",
-        inputSchema: z.object({
-          cursor: z.string().nullable().optional(),
-          limit: z.number().int().min(1).max(50).optional(),
-        }),
-        annotations: { readOnlyHint: true },
-      },
-      async ({ cursor, limit }) =>
-        runTool("list_documents", () => documents.list(cursor ?? null, limit ?? 25))
-    );
-
-    server.registerTool(
-      "read_document",
-      {
-        description:
-          "Read your cloud document in chunks of up to 32768 characters. Bundle reads default to index.html; set path to read a CSS, JavaScript, or other text asset.",
-        inputSchema: z.object({
-          id: z.string().min(1),
-          offset: z.number().int().min(0).optional(),
-          maxCharacters: z.number().int().min(1).max(32_768).optional(),
-          path: z.string().min(1).max(1024).optional(),
-        }),
-        annotations: { readOnlyHint: true },
-      },
-      async ({ id, offset, maxCharacters, path }) =>
-        runTool("read_document", () => documents.read(id, offset, maxCharacters, path))
-    );
-
-    server.registerTool(
-      "upload_document",
-      {
-        description:
-          "Upload an HTML document to your cloud workspace. Maximum encoded size is 8 MiB. Uploaded files are public during development.",
-        inputSchema: z.object({ title: z.string().min(1).max(200), html: z.string() }),
-        annotations: { readOnlyHint: false },
-      },
-      async ({ title, html }) =>
-        runTool("upload_document", async () => {
-          const { id } = await documents.upload(title, html);
-          return presentMcpUpload(id, siteUrl!);
-        })
-    );
-
-    server.registerTool(
-      "list_bundle_files",
-      {
-        description:
-          "List files in your uploaded artifact bundle, up to 50 files per page. Use nextOffset to continue.",
-        inputSchema: z.object({
-          id: z.string().min(1),
-          offset: z.number().int().min(0).optional(),
-          limit: z.number().int().min(1).max(50).optional(),
-        }),
-        annotations: { readOnlyHint: true },
-      },
-      async ({ id, offset, limit }) =>
-        runTool("list_bundle_files", () => documents.listBundleFiles(id, offset, limit))
-    );
-
-    server.registerTool(
-      "upload_bundle",
-      {
-        description:
-          "Upload an HTML/CSS/JavaScript artifact as one document. Requires root index.html. File paths are relative and URL-safe. Files contain UTF-8 text; at most 512 files and 8 MiB including the manifest. read_document reads its index.html. Each upload creates a new document.",
-        inputSchema: z.object({
-          title: z.string().min(1).max(200),
-          files: z
-            .array(z.object({ path: z.string().min(1).max(1024), content: z.string() }))
-            .min(1)
-            .max(512),
-        }),
-        annotations: { readOnlyHint: false, idempotentHint: false },
-      },
-      async ({ title, files }) =>
-        runTool("upload_bundle", async () => {
-          const result = await documents.uploadBundle(title, files);
-          return { ...result, ...presentMcpUpload(result.id, siteUrl!) };
-        })
-    );
-
-    server.registerTool(
-      "delete_document",
-      {
-        description:
-          "Hide one of your documents immediately and queue storage cleanup with background retries.",
-        inputSchema: z.object({ id: z.string().min(1) }),
-        annotations: { destructiveHint: true },
-      },
-      async ({ id }) => runTool("delete_document", () => documents.delete(id))
-    );
-    return server;
+    return createHostedMcpServer(createMcpDocumentService(ownerId), siteUrl!);
   },
   // JSON escaping can expand an 8 MiB HTML string by up to six times.
   {

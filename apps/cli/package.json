@@ -34,11 +34,11 @@
   },
   "devDependencies": {
     "@planview/local": "0.1.0",
-    "@types/node": "24.10.1",
+    "@types/node": "24.19.2",
     "esbuild": "0.28.2",
     "@planview/core": "0.1.0"
   },
   "dependencies": {
-    "effect": "4.0.0"
+    "effect": "4.0.6"
   }
 }
