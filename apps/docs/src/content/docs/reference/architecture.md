@@ -63,3 +63,12 @@ cleanup even when a provider response is lost. Server proofs do not go to browse
 The provider adapter owns uploads, read URLs, and deletion. Standalone HTML
 previews download from storage in the browser after the app checks ownership.
 Hosted deployment status is in the [features reference](../planned-features/).
+
+
+Local snapshot inventory and usage pass through `LocalApplication` to the
+existing authenticated daemon. The daemon alone opens snapshot metadata.
+Selected deletion uses immutable generations, target identity and active-read
+leases, with the same mutation gate as publication and cleanup. If metadata
+removal succeeds but file removal fails, the snapshot becomes invisible and
+bounded reconciliation owns the remaining file. The cloud app and hosted MCP
+remain independent of these local operations.

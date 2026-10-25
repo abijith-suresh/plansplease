@@ -35,3 +35,26 @@ The fixed local quota is 1 GiB of logical committed storage. Admission charges
 published HTML bytes plus 4 KiB per document for metadata. It does not bound
 physical disk use, staging, or orphan files. Cleanup applies the fixed 30-day
 last-access retention policy; the quota is not user-configurable.
+
+
+## Snapshot management
+
+The daemon composes `createSnapshotManagement` with its already-open stores.
+Inventory uses bounded SQLite pages of at most 100 rows and never enumerates
+files or records document access. Usage is the existing logical quota charge.
+Clients never open SQLite for inventory, usage, or timeout estimation.
+
+Selected deletion compares an immutable metadata generation, observes physical
+file identity, then rechecks metadata under the file store's target lock. That
+operation refuses active read leases before changing metadata. Publication,
+cleanup and selected deletion share the daemon's mutation gate. Cancellation
+cannot interrupt the metadata-to-file deletion boundary.
+
+SQLite and filesystem deletion cannot commit atomically. Metadata removal is
+the visibility fence; a later unlink/sync failure reports partial progress and
+leaves physical recovery to existing bounded orphan reconciliation. Metadata
+acknowledgement failures remain partial unless a read proves the original
+generation is retained, in which case retrying the selection is safe. The coordinator never restores a
+row under a new generation or claims uncertain physical bytes were reclaimed.
+A stale generation never authorizes removing a replacement. `not_found` only
+means metadata is absent and does not claim that physical residuals are gone.

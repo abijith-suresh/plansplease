@@ -101,7 +101,7 @@ const runSmoke = async () => {
 
   const workspace = mkdtempSync(join(tmpdir(), "planview-cross-platform-"));
   const packageDestination = join(workspace, "package");
-  const installPrefix = join(workspace, "installed CLI");
+  const installPrefix = join(workspace, "installed CLI é");
   mkdirSync(packageDestination);
   const home = join(workspace, "home");
   // Keep using the legacy default root, including for a pre-existing named profile.
@@ -147,7 +147,7 @@ const runSmoke = async () => {
     const cli = findInstalledCli(installPrefix);
     execute = (args, options = {}) =>
       spawnSync(shellArgument(cli), ["--profile", "branding", ...args].map(shellArgument), {
-        cwd: root,
+        cwd: workspace,
         env: environment,
         encoding: null,
         shell,
@@ -233,6 +233,27 @@ const runSmoke = async () => {
     assert.equal(artifactImageResponse.status, 200);
     assert.equal(artifactImageResponse.headers.get("content-type"), "image/png");
     assert.deepEqual(Buffer.from(await artifactImageResponse.arrayBuffer()), artifactImage);
+
+    const listed = execute(["list", "--limit", "1", "--json"]);
+    assertSuccessful(listed, "packed CLI bounded inventory");
+    const firstPage = JSON.parse(text(listed.stdout));
+    assert.equal(firstPage.snapshots.length, 1);
+    assert.ok(firstPage.nextAfter);
+    const next = execute(["list", "--after", firstPage.nextAfter, "--json"]);
+    assertSuccessful(next, "packed CLI inventory continuation");
+    assert.equal(JSON.parse(text(next.stdout)).snapshots.length, 2);
+    const usage = execute(["usage", "--json"]);
+    assertSuccessful(usage, "packed CLI logical usage");
+    const usageResult = JSON.parse(text(usage.stdout));
+    assert.equal(usageResult.documentCount, 3);
+    assert.equal(usageResult.metadataBytes, 3 * 4096);
+    assert.equal(usageResult.bytes, usageResult.documentBytes + usageResult.metadataBytes);
+    const selected = firstPage.snapshots[0];
+    const deleted = execute(["delete", selected.id, "--generation", selected.generation, "--json"]);
+    assertSuccessful(deleted, "packed CLI selected deletion");
+    assert.equal(JSON.parse(text(deleted.stdout)).status, "deleted");
+    assert.equal(execute(["get", selected.id]).status, 1);
+    assert.equal(JSON.parse(text(execute(["usage", "--json"]).stdout)).documentCount, 2);
 
     const stopped = execute(["stop"]);
     assertSuccessful(stopped, "packed CLI stop");

@@ -77,6 +77,7 @@ export interface MetadataStore {
   readonly close: () => void;
   readonly insertDocumentMetadata: (metadata: DocumentMetadata) => void;
   readonly getDocumentMetadata: (id: string) => DocumentMetadata | undefined;
+  readonly getDocumentMetadataSnapshot: (id: string) => DocumentMetadataSnapshot | undefined;
   readonly listDocumentMetadata: () => readonly DocumentMetadata[];
   /** The rowid high-water mark for a mutation-safe metadata pass. */
   readonly getDocumentMetadataScanWatermark: () => number;

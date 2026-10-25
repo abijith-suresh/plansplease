@@ -18,7 +18,11 @@ import {
   unknownOption,
 } from "./arguments.js";
 import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "./cloud.js";
-import { runDaemonCommandFromArgs, runDocumentCommand } from "./commands/local.js";
+import {
+  runInventoryCommand,
+  runDaemonCommandFromArgs,
+  runDocumentCommand,
+} from "./commands/local.js";
 import { formatHelp, type HelpTopic } from "./help.js";
 import {
   CloudCommandError,
@@ -323,6 +327,10 @@ const commandWithProfile = (
 
   if (argument === "publish" || argument === "get") {
     return runDocumentCommand(argument, application, trailing, stdout, openUrl);
+  }
+
+  if (argument === "list" || argument === "usage" || argument === "delete") {
+    return runInventoryCommand(argument, application, trailing, stdout);
   }
 
   return runDaemonCommandFromArgs(argument, application, trailing, stdout);

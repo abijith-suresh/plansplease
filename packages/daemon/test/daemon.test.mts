@@ -973,6 +973,31 @@ test("a stalled raw-socket read does not block publish or clean", async () => {
       return ready.status === 200 ? true : undefined;
     });
     socket = await openStalledDocument(port, documentId);
+    const inventoryResponse = await within(
+      fetch(`http://127.0.0.1:${port}/__planview/snapshots?limit=1`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      }),
+      2_000
+    );
+    assert.equal(inventoryResponse.status, 200);
+    const inventory = (await inventoryResponse.json()) as {
+      snapshots: { id: string; generation: string }[];
+    };
+    const selection = inventory.snapshots.find((row) => row.id === documentId);
+    assert.ok(selection);
+    const selectedDelete = await within(
+      fetch(`http://127.0.0.1:${port}/__planview/delete`, {
+        method: "POST",
+        headers: { "x-planview-secret": descriptor.secret, "content-type": "application/json" },
+        body: JSON.stringify({ id: selection.id, generation: selection.generation }),
+      }),
+      2_000
+    );
+    assert.equal(selectedDelete.status, 200);
+    const retained = (await selectedDelete.json()) as { status: string; removedMetadata: boolean };
+    assert.equal(retained.status, "retained");
+    assert.equal(retained.removedMetadata, false);
+
     const publishSource = join(fixture, "unrelated.html");
     writeFileSync(publishSource, "unrelated publish");
     const publishResponse = await within(

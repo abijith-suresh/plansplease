@@ -3,6 +3,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { pipeline } from "node:stream/promises";
 import { DEFAULT_PROFILE_NAME, validateDocumentId, type DocumentId } from "@planview/core";
 import {
+  validateSnapshotListOptions,
+  validateSnapshotSelection,
+  createSnapshotManagement,
   DocumentPublicationNotFoundError,
   DocumentPublicationReadError,
   type DocumentCleanupResult,
@@ -26,6 +29,9 @@ export const DAEMON_STARTUP_ACK_PATH = "/__planview/startup-ack";
 export const DAEMON_STATUS_PATH = "/__planview/status";
 export const DAEMON_SHUTDOWN_PATH = "/__planview/shutdown";
 export const DAEMON_PUBLISH_PATH = "/__planview/publish";
+export const DAEMON_INVENTORY_PATH = "/__planview/snapshots";
+export const DAEMON_USAGE_PATH = "/__planview/usage";
+export const DAEMON_DELETE_PATH = "/__planview/delete";
 export const DAEMON_CLEAN_PATH = "/__planview/clean";
 /** Slow consumers are allowed to backpressure, but not to remain completely idle forever. */
 export const DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS = 30_000;
@@ -64,6 +70,7 @@ export type DaemonHttpRouteOptions = Readonly<{
   readonly requestShutdown: () => void;
   readonly publicationCoordinator: DocumentPublicationCoordinator;
   readonly metadataStore: MetadataStore;
+  readonly snapshotManagement: ReturnType<typeof createSnapshotManagement>;
   readonly runCleanup: (signal?: AbortSignal) => Promise<DocumentCleanupResult>;
   readonly isReady: () => boolean;
   readonly documentReadAdmission: DocumentReadAdmission;
@@ -160,6 +167,9 @@ const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_SHUTDOWN_PATH,
   DAEMON_PUBLISH_PATH,
   DAEMON_CLEAN_PATH,
+  DAEMON_INVENTORY_PATH,
+  DAEMON_USAGE_PATH,
+  DAEMON_DELETE_PATH,
   "/internal/clean",
   "/internal/ready",
   "/internal/status",
@@ -379,6 +389,7 @@ const handleRequest = async (
     publicationCoordinator,
     metadataStore,
     runCleanup,
+    snapshotManagement,
     isReady,
     documentReadAdmission,
     operationGate,
@@ -564,6 +575,60 @@ const handleRequest = async (
   if ((url === DAEMON_SHUTDOWN_PATH || url === "/internal/shutdown") && request.method === "POST") {
     response(res, 202, JSON.stringify({ shuttingDown: true }));
     requestShutdown();
+    return;
+  }
+  if (url === DAEMON_INVENTORY_PATH && request.method === "GET") {
+    let options: ReturnType<typeof validateSnapshotListOptions>;
+    try {
+      const query = new URL(request.url ?? "", `http://${DAEMON_HOST}`).searchParams;
+      if (
+        [...query.keys()].some((key) => key !== "limit" && key !== "after") ||
+        query.getAll("limit").length > 1 ||
+        query.getAll("after").length > 1
+      ) {
+        throw new Error("Expected only limit and after query parameters.");
+      }
+      options = validateSnapshotListOptions({
+        ...(query.has("limit") ? { limit: Number(query.get("limit")) } : {}),
+        ...(query.has("after") ? { after: query.get("after") ?? "" } : {}),
+      });
+    } catch (cause) {
+      response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
+      return;
+    }
+    response(res, 200, JSON.stringify(await Effect.runPromise(snapshotManagement.list(options))));
+    return;
+  }
+  if (url === DAEMON_USAGE_PATH && request.method === "GET") {
+    response(res, 200, JSON.stringify(await Effect.runPromise(snapshotManagement.usage())));
+    return;
+  }
+  if (url === DAEMON_DELETE_PATH && request.method === "POST") {
+    let selection: ReturnType<typeof validateSnapshotSelection>;
+    try {
+      const payload = await readJsonBody(request, requestSignal);
+      if (
+        !isRecord(payload) ||
+        typeof payload["id"] !== "string" ||
+        typeof payload["generation"] !== "string" ||
+        Object.keys(payload).some((key) => key !== "id" && key !== "generation")
+      ) {
+        throw new Error("Expected a snapshot id and generation from list.");
+      }
+      selection = validateSnapshotSelection({
+        id: payload["id"],
+        generation: payload["generation"],
+      });
+    } catch (cause) {
+      if (!res.destroyed)
+        response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
+      return;
+    }
+    const result = await operationGate(
+      (signal) => Effect.runPromise(snapshotManagement.deleteSnapshot(selection, signal)),
+      requestSignal
+    );
+    response(res, 200, JSON.stringify(result));
     return;
   }
   if ((url === DAEMON_CLEAN_PATH || url === "/internal/clean") && request.method === "POST") {

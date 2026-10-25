@@ -329,6 +329,18 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     } satisfies DocumentMetadataPage;
   };
 
+  const getDocumentMetadataSnapshot = (id: string) => {
+    ensureOpen();
+    const row = database
+      .prepare(
+        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation
+       FROM documents AS d JOIN ${GENERATION_TABLE_NAME} AS g ON g.id = d.id
+       WHERE d.id = :id`
+      )
+      .get({ ":id": validateId(id) });
+    return row === undefined ? undefined : documentSnapshotFromRow(row);
+  };
+
   const listDocumentMetadataPage = (limit: number, afterId?: string, watermark?: number) => {
     ensureOpen();
     const normalizedLimit = validatePageLimit(limit);
@@ -533,6 +545,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     getDocumentMetadataScanWatermark,
     listDocumentMetadataCandidates,
     listDocumentMetadataPage,
+    getDocumentMetadataSnapshot,
     recordDocumentAccess,
     getDocumentAggregate,
     getDocumentStorageUsage,
