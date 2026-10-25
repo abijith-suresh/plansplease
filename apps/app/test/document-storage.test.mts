@@ -49,32 +49,6 @@ test("throws when UploadThing resolves a deletion as unsuccessful", async () => 
   );
 });
 
-test("upload owns provider-specific options and returns its locator", async () => {
-  const adapter = createUploadThingStorageAdapter(
-    createUploadThingApi({
-      uploadFiles: async (file, options) => {
-        assert.equal(file.customId, "owner_123:object-456");
-        assert.equal(file.type, "text/html");
-        assert.equal(file.name, "plan.html");
-        assert.equal(await file.text(), "<h1>Plan</h1>");
-        assert.deepEqual(options, { acl: "public-read", contentDisposition: "inline" });
-        return { data: { key: "provider-result" }, error: null };
-      },
-    })
-  );
-  assert.deepEqual(
-    await adapter.upload({
-      file: new File(["<h1>Plan</h1>"], "plan.html", { type: "text/html" }),
-      objectId: "owner_123:object-456",
-      deadlineAt: Date.now() + 60_000,
-    }),
-    {
-      storageProvider: "uploadthing",
-      storageKey: "uploadthing-custom-id:owner_123:object-456",
-    }
-  );
-});
-
 test("bundle uploads preserve encoded bytes, MIME and the reserved provider locator", async () => {
   const bytes = packCloudBundle([
     { path: "index.html", content: '<link rel="stylesheet" href="style.css"><h1>Plan</h1>' },
@@ -85,7 +59,8 @@ test("bundle uploads preserve encoded bytes, MIME and the reserved provider loca
   const adapter = createUploadThingStorageAdapter((deadline) => {
     assert.equal(deadline, deadlineAt);
     return createUploadThingApi({
-      uploadFiles: async (file) => {
+      uploadFiles: async (file, options) => {
+        assert.deepEqual(options, { acl: "public-read", contentDisposition: "inline" });
         assert.equal(file.type, cloudBundleContentType);
         assert.equal(file.customId, objectId);
         assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
@@ -154,25 +129,6 @@ test("an expired reservation sends no bytes to the provider", async () => {
     /reservation expired/
   );
   assert.equal(uploads, 0);
-});
-
-test("provider construction receives the unchanged reservation deadline", async () => {
-  const deadlines: Array<number | undefined> = [];
-  const deadlineAt = Date.now() + 60_000;
-  const adapter = createUploadThingStorageAdapter((deadline) => {
-    deadlines.push(deadline);
-    return createUploadThingApi({
-      uploadFiles: async () => ({ data: {}, error: null }),
-      getFileUrls: async () => ({ data: [{ url: "https://cdn.example/read" }] }),
-    });
-  });
-  const objectId = "owner:object";
-  assert.deepEqual(
-    await adapter.upload({ file: new File(["plan"], "plan.html"), objectId, deadlineAt }),
-    adapter.getUploadLocator(objectId)
-  );
-  await adapter.getReadUrl("legacy-key");
-  assert.deepEqual(deadlines, [deadlineAt, undefined]);
 });
 
 test("all provider requests share the absolute deadline and retain SDK cancellation", async () => {

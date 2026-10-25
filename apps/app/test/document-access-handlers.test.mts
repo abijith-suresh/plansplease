@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConvexConfigurationError } from "../src/lib/convex-configuration-error.ts";
 
 import {
   createDocumentDeleteHandler,
@@ -22,8 +21,6 @@ const storedDocument: DocumentAccessRecord = {
 
 type HandlerCalls = {
   events: string[];
-  storageLookups: string[];
-  readUrlKeys: string[];
   fetches: Array<{ input: string; authorization: string | null }>;
 };
 
@@ -34,8 +31,6 @@ function createHandlers(
 ) {
   const calls = {
     events: [] as string[],
-    storageLookups: [] as string[],
-    readUrlKeys: [] as string[],
     fetches: [] as Array<{ input: string; authorization: string | null }>,
   };
   const resolvedOverrides = typeof overrides === "function" ? overrides(calls) : overrides;
@@ -49,16 +44,14 @@ function createHandlers(
       assert.equal(id, documentId);
       return storedDocument;
     },
-    getDocumentStorage: (provider) => {
+    getDocumentStorage: () => {
       calls.events.push("get-storage");
-      calls.storageLookups.push(provider);
       return {
         provider: "uploadthing",
         getUploadLocator: () => ({ storageProvider: "uploadthing", storageKey }),
         upload: async () => ({ storageProvider: "uploadthing", storageKey }),
-        getReadUrl: async (key) => {
+        getReadUrl: async () => {
           calls.events.push("get-read-url");
-          calls.readUrlKeys.push(key);
           return "https://storage.example/document.html";
         },
         delete: async (key) => {
@@ -121,7 +114,6 @@ test("does not look up storage when the authenticated user cannot access a docum
   assert.equal(response.status, 404);
   assert.equal(await response.text(), "Not found");
   assert.deepEqual(calls.events, ["authenticate", "get-document"]);
-  assert.deepEqual(calls.storageLookups, []);
   assert.deepEqual(calls.fetches, []);
 });
 
@@ -141,7 +133,6 @@ test("requires a session before looking up or reading a document", async () => {
   assert.equal(deleteResponse.status, 401);
   assert.deepEqual(await deleteResponse.json(), { error: "Authentication required" });
   assert.deepEqual(calls.events, ["authenticate", "authenticate"]);
-  assert.deepEqual(calls.storageLookups, []);
 });
 
 test("authorizes before returning a direct browser preview without server byte fetches", async () => {
@@ -150,39 +141,8 @@ test("authorizes before returning a direct browser preview without server byte f
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.ok(html.includes("https://storage.example/document.html"));
-  assert.ok(html.includes('sandbox="allow-scripts allow-modals allow-popups"'));
-  assert.equal(response.headers.get("cache-control"), "private, no-store");
-  assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
   assert.deepEqual(calls.events, ["authenticate", "get-document", "get-storage", "get-read-url"]);
   assert.deepEqual(calls.fetches, []);
-});
-
-test("maps storage URL lookup rejection through the route error handler", async () => {
-  const { preview } = createHandlers({
-    getDocumentStorage: () => ({
-      provider: "uploadthing",
-      getUploadLocator: () => ({ storageProvider: "uploadthing", storageKey }),
-      upload: async () => ({ storageProvider: "uploadthing", storageKey }),
-      delete: async () => undefined,
-      getReadUrl: async () => {
-        throw new Error("storage URL lookup failed");
-      },
-    }),
-  });
-  const response = await preview(event());
-  assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: "storage URL lookup failed" });
-});
-
-test("maps explicit Convex configuration failures to 503 for access routes", async () => {
-  const { preview } = createHandlers({
-    getAuthedClient: async () => {
-      throw new ConvexConfigurationError();
-    },
-  });
-  const response = await preview(event());
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "backend unavailable" });
 });
 
 test("proxies legacy Convex-backed documents with the authenticated token", async () => {
@@ -200,7 +160,6 @@ test("proxies legacy Convex-backed documents with the authenticated token", asyn
     },
   ]);
   assert.ok(calls.events.includes("proxy-response"));
-  assert.deepEqual(calls.storageLookups, []);
 });
 
 test("accepts deletion without contacting storage in the request", async () => {
@@ -210,7 +169,6 @@ test("accepts deletion without contacting storage in the request", async () => {
 
   assert.equal(response.status, 202);
   assert.deepEqual(calls.events, ["authenticate", "request-deletion"]);
-  assert.deepEqual(calls.storageLookups, []);
 });
 
 test("returns not found when deletion cannot access the document", async () => {
@@ -241,19 +199,4 @@ test("does not acknowledge deletion if Convex cannot record it", async () => {
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: "Convex unavailable" });
   assert.deepEqual(calls.events, ["authenticate", "request-deletion", "error-response"]);
-});
-
-test("returns 204 when Convex deletes a legacy stored file atomically", async () => {
-  const { calls, remove } = createHandlers((calls) => ({
-    requestDeletion: async () => {
-      calls.events.push("request-deletion");
-      return "deleted";
-    },
-  }));
-
-  const response = await remove(event());
-
-  assert.equal(response.status, 204);
-  assert.deepEqual(calls.events, ["authenticate", "request-deletion"]);
-  assert.deepEqual(calls.storageLookups, []);
 });

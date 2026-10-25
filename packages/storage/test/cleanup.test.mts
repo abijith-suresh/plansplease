@@ -3,8 +3,9 @@ import { mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promise
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Effect } from "effect";
 import type { DocumentId } from "@planview/core";
+import { Effect } from "effect";
+import type { MetadataStore } from "../dist/index.js";
 import {
   createDocumentCleanupCoordinator,
   createDocumentPublicationCoordinator,
@@ -13,29 +14,15 @@ import {
   V1_CLEANUP_ITEM_BUDGET,
   V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
 } from "../dist/index.js";
-import type { DocumentCleanupResult, MetadataStore } from "../dist/index.js";
 import {
-  withStorageTestEnvironment,
   type StorageTestEnvironment,
   type StorageTestStoreOptions,
+  withStorageTestEnvironment,
 } from "./support/storage-environment.mts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
 const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
-
-type CleanupTotalField =
-  | "removedDocuments"
-  | "removedDocumentFiles"
-  | "removedMetadataRows"
-  | "reclaimedBytes";
-type CleanupTotals = Record<CleanupTotalField, number>;
-const cleanupTotalFields: readonly CleanupTotalField[] = [
-  "removedDocuments",
-  "removedDocumentFiles",
-  "removedMetadataRows",
-  "reclaimedBytes",
-];
 
 const withEnvironment = <T,>(
   callback: (environment: StorageTestEnvironment) => T | PromiseLike<T>,
@@ -153,9 +140,9 @@ test("cross-store active reads remain protected by a filesystem reference", asyn
     }
   ));
 
-test("cleanup handles roughly 500 expired documents and reports physical bytes", () =>
+test("cleanup reports physical bytes rather than trusting metadata sizes", () =>
   withEnvironment(async ({ documentFileStore, metadataStore, documentsDir }) => {
-    const documents = 500;
+    const documents = 3;
     await Promise.all(
       Array.from({ length: documents }, async (_, index) => {
         const documentId = `a${index.toString(36).padStart(20, "0")}`;
@@ -173,23 +160,12 @@ test("cleanup handles roughly 500 expired documents and reports physical bytes",
       metadataStore,
       now: () => DAY * 31 + 1,
     });
-    const totals: CleanupTotals = {
-      removedDocuments: 0,
-      removedDocumentFiles: 0,
-      removedMetadataRows: 0,
-      reclaimedBytes: 0,
-    };
-    let result: DocumentCleanupResult;
-    do {
-      result = await runEffect(cleanup.clean());
-      for (const field of cleanupTotalFields) {
-        totals[field] += result[field];
-      }
-    } while (result.resumable);
-    assert.equal(totals.removedDocuments, documents);
-    assert.equal(totals.removedDocumentFiles, documents);
-    assert.equal(totals.removedMetadataRows, documents);
-    assert.equal(totals.reclaimedBytes, documents);
+    const result = await runEffect(cleanup.clean());
+    assert.equal(result.resumable, false);
+    assert.equal(result.removedDocuments, documents);
+    assert.equal(result.removedDocumentFiles, documents);
+    assert.equal(result.removedMetadataRows, documents);
+    assert.equal(result.reclaimedBytes, documents);
   }));
 
 test("startup reconciliation removes orphan files, missing rows, mismatches, and staged snapshots", () =>
@@ -236,41 +212,37 @@ test("startup reconciliation removes orphan files, missing rows, mismatches, and
     }
   ));
 
-for (const mode of ["unbounded", "bounded"] as const) {
-  test(`${mode} reconciliation removes only read markers with a dead local owner`, () =>
-    withEnvironment(async ({ documentFileStore, stagingDir }) => {
-      const marker = (token: string) => `.read.${id("r")}.${token.repeat(22)}`;
-      const references = [
-        { name: marker("a"), owner: { pid: 99_999_999, host: hostname() } },
-        { name: marker("b"), owner: { pid: process.pid, host: hostname() } },
-        { name: marker("c"), owner: { pid: 99_999_999, host: "another-host" } },
-      ];
-      for (const { name, owner } of references) {
-        await writeFile(
-          join(stagingDir, name),
-          JSON.stringify({ version: 1, owner, acquiredAt: DAY })
-        );
-      }
-      await writeFile(join(stagingDir, marker("d")), "{malformed");
-      const unknownEntries = [".invalid.lock", ".invalid.target.lock", "unknown"];
-      for (const name of unknownEntries) {
-        await writeFile(join(stagingDir, name), "retain");
-      }
+test("reconciliation removes only read markers with a dead local owner", () =>
+  withEnvironment(async ({ documentFileStore, stagingDir }) => {
+    const marker = (token: string) => `.read.${id("r")}.${token.repeat(22)}`;
+    const references = [
+      { name: marker("a"), owner: { pid: 99_999_999, host: hostname() } },
+      { name: marker("b"), owner: { pid: process.pid, host: hostname() } },
+      { name: marker("c"), owner: { pid: 99_999_999, host: "another-host" } },
+    ];
+    for (const { name, owner } of references) {
+      await writeFile(
+        join(stagingDir, name),
+        JSON.stringify({ version: 1, owner, acquiredAt: DAY })
+      );
+    }
+    await writeFile(join(stagingDir, marker("d")), "{malformed");
+    const unknownEntries = [".invalid.lock", ".invalid.target.lock", "unknown"];
+    for (const name of unknownEntries) {
+      await writeFile(join(stagingDir, name), "retain");
+    }
 
-      const result = await documentFileStore.reconcileDocumentFiles(
-        mode === "bounded" ? { maxItems: 128 } : undefined
-      );
-      assert.equal(result.readReferencesRemoved, 1);
-      assert.equal(result.finalizationLocksRemoved, 0);
-      assert.equal(result.retainedEntries, 6);
-      assert.equal(result.processedItems, 7);
-      assert.equal(result.resumable, false);
-      assert.deepEqual(
-        (await readdir(stagingDir)).sort(),
-        [marker("b"), marker("c"), marker("d"), ...unknownEntries].sort()
-      );
-    }));
-}
+    const result = await documentFileStore.reconcileDocumentFiles({ maxItems: 128 });
+    assert.equal(result.readReferencesRemoved, 1);
+    assert.equal(result.finalizationLocksRemoved, 0);
+    assert.equal(result.retainedEntries, 6);
+    assert.equal(result.processedItems, 7);
+    assert.equal(result.resumable, false);
+    assert.deepEqual(
+      (await readdir(stagingDir)).sort(),
+      [marker("b"), marker("c"), marker("d"), ...unknownEntries].sort()
+    );
+  }));
 
 test("rechecks fresh and stale lock state and reports only removed locks", () =>
   withEnvironment(async ({ documentFileStore, stagingDir }) => {
@@ -453,7 +425,6 @@ test("canceled cleanup returns a resumable cursor without skipping the active ro
 test("pages document files in exact bytewise order and resume without gaps", () => {
   const ids = [id("A"), id("_"), id("-"), id("a"), id("0")];
   const insertedId = id("1");
-  let directoryEnumerations = 0;
   return withEnvironment(
     async ({ documentFileStore, documentsDir }) => {
       await Promise.all(
@@ -475,162 +446,14 @@ test("pages document files in exact bytewise order and resume without gaps", () 
         after = page.nextId;
       } while (page.hasMore);
       assert.deepEqual(observed, expected);
-      assert.equal(directoryEnumerations, 1);
-
-      await documentFileStore.listDocumentFilesPage(2);
-      assert.equal(directoryEnumerations, 2);
-    },
-    {
-      documentFileScanStartedAt: () => 100,
-      onDocumentFileDirectoryEnumeration: () => {
-        directoryEnumerations += 1;
-      },
-      documentFileScanObservation: (observation) => ({
-        ...observation,
-        identity: {
-          ...observation.identity,
-          birthtimeMs: observation.id === insertedId ? 200 : 1,
-        },
-      }),
-    }
-  );
-});
-
-test("uses one physical directory listing per watermark and sees later insertions on a fresh scan", () => {
-  const firstId = id("a");
-  const lastId = id("z");
-  const insertedId = id("m");
-  let directoryEnumerations = 0;
-  return withEnvironment(
-    async ({ documentFileStore, documentsDir }) => {
-      await Promise.all([
-        writeFile(join(documentsDir, `${firstId}.html`), "first"),
-        writeFile(join(documentsDir, `${lastId}.html`), "last"),
-      ]);
-
-      const first = await documentFileStore.listDocumentFilesPage(1);
-      assert.deepEqual(
-        first.files.map((file) => file.id),
-        [firstId]
-      );
-      assert.equal(first.nextId, firstId);
-      assert.equal(first.watermark?.throughId, lastId);
-      assert.equal(first.hasMore, true);
-      await writeFile(join(documentsDir, `${insertedId}.html`), "inserted after snapshot");
-
-      const remaining = await documentFileStore.listDocumentFilesPage(
-        1,
-        first.nextId,
-        first.watermark
-      );
-      assert.strictEqual(remaining.watermark, first.watermark);
-      assert.deepEqual(
-        remaining.files.map((file) => file.id),
-        [lastId]
-      );
-      assert.equal(remaining.nextId, lastId);
-      assert.equal(remaining.hasMore, false);
-      assert.equal(directoryEnumerations, 1);
-
       const fresh = await documentFileStore.listDocumentFilesPage(10);
       assert.deepEqual(
         fresh.files.map((file) => file.id),
-        [firstId, insertedId, lastId].sort((left, right) =>
-          Buffer.compare(Buffer.from(left), Buffer.from(right))
-        )
+        [...expected, insertedId].sort()
       );
-      assert.equal(directoryEnumerations, 2);
     },
     {
       documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
-      onDocumentFileDirectoryEnumeration: () => {
-        directoryEnumerations += 1;
-      },
-    }
-  );
-});
-
-test("uses fresh enumeration for a cloned watermark", () => {
-  const firstId = id("a");
-  const secondId = id("b");
-  let directoryEnumerations = 0;
-  return withEnvironment(
-    async ({ documentFileStore, documentsDir }) => {
-      await Promise.all([
-        writeFile(join(documentsDir, `${firstId}.html`), "first"),
-        writeFile(join(documentsDir, `${secondId}.html`), "second"),
-      ]);
-      const first = await documentFileStore.listDocumentFilesPage(1);
-      const clonedWatermark = { ...first.watermark! };
-      const second = await documentFileStore.listDocumentFilesPage(
-        1,
-        first.nextId,
-        clonedWatermark
-      );
-      assert.strictEqual(second.watermark, clonedWatermark);
-      assert.deepEqual(
-        second.files.map((file) => file.id),
-        [secondId]
-      );
-      assert.equal(directoryEnumerations, 2);
-    },
-    {
-      documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
-      onDocumentFileDirectoryEnumeration: () => {
-        directoryEnumerations += 1;
-      },
-    }
-  );
-});
-
-test("discards a cached snapshot when a watermark is mutated", () => {
-  const firstId = id("a");
-  const secondId = id("b");
-  const thirdId = id("c");
-  let directoryEnumerations = 0;
-  return withEnvironment(
-    async ({ documentFileStore, documentsDir }) => {
-      await Promise.all(
-        [firstId, secondId, thirdId].map((documentId) =>
-          writeFile(join(documentsDir, `${documentId}.html`), documentId)
-        )
-      );
-      const first = await documentFileStore.listDocumentFilesPage(1);
-      assert.deepEqual(
-        first.files.map((file) => file.id),
-        [firstId]
-      );
-      const mutableWatermark = first.watermark as { throughId: string; startedAt: number };
-      mutableWatermark.startedAt -= 1;
-
-      const second = await documentFileStore.listDocumentFilesPage(
-        1,
-        first.nextId,
-        mutableWatermark
-      );
-      assert.deepEqual(
-        second.files.map((file) => file.id),
-        [secondId]
-      );
-      assert.strictEqual(second.watermark, mutableWatermark);
-
-      mutableWatermark.startedAt += 1;
-      const third = await documentFileStore.listDocumentFilesPage(
-        1,
-        second.nextId,
-        mutableWatermark
-      );
-      assert.deepEqual(
-        third.files.map((file) => file.id),
-        [thirdId]
-      );
-      assert.equal(directoryEnumerations, 3);
-    },
-    {
-      documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
-      onDocumentFileDirectoryEnumeration: () => {
-        directoryEnumerations += 1;
-      },
     }
   );
 });

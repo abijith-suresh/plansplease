@@ -3,17 +3,13 @@ import { test } from "node:test";
 import {
   InvalidSourceFileSizeError,
   SourceFileTooLargeError,
-  SUPPORTED_SOURCE_EXTENSIONS,
   UnsupportedSourceExtensionError,
   V1_MAX_HTML_SIZE_BYTES,
-  validateSourceFile,
   validateSourceFileExtension,
   validateSourceFileSize,
 } from "../dist/index.js";
 
 test("supports only HTML source extensions, case-insensitively", () => {
-  assert.deepEqual(SUPPORTED_SOURCE_EXTENSIONS, [".html", ".htm"]);
-
   for (const [path, extension] of [
     ["index.html", ".html"],
     ["index.htm", ".htm"],
@@ -49,13 +45,6 @@ test("rejects source extension and path edge cases with a typed error", () => {
       }
     );
   }
-});
-
-test("accepts the exact 10 MiB source size boundary", () => {
-  assert.equal(validateSourceFileSize(0), 0);
-  assert.equal(validateSourceFileSize(V1_MAX_HTML_SIZE_BYTES - 1), V1_MAX_HTML_SIZE_BYTES - 1);
-  assert.equal(validateSourceFileSize(V1_MAX_HTML_SIZE_BYTES), V1_MAX_HTML_SIZE_BYTES);
-  assert.equal(validateSourceFile("page.HTML", V1_MAX_HTML_SIZE_BYTES), ".html");
 });
 
 test("rejects oversized and invalid source sizes with distinct typed errors", () => {

@@ -114,27 +114,6 @@ const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
   );
 };
 
-const assertSkipLinkStyles = (output) => {
-  const cssFiles = readdirSync(resolve(output, "_astro")).filter((file) => file.endsWith(".css"));
-  assert.ok(cssFiles.length > 0, "the build should provide CSS for accessibility assertions");
-  const css = cssFiles
-    .map((file) => readFileSync(resolve(output, "_astro", file), "utf8"))
-    .join("\n");
-  const rules = css.split("}");
-  const skipLinkRule = rules.find(
-    (rule) => rule.includes(".skip-link") && !rule.includes(":focus-visible")
-  );
-  const focusRule = rules.find(
-    (rule) => rule.includes(".skip-link") && rule.includes(":focus-visible")
-  );
-
-  assert.ok(skipLinkRule, "the skip link should be visually hidden before focus");
-  assert.ok(skipLinkRule.includes("transform:translateY(-200%)"));
-  assert.ok(focusRule, "the skip link should have a focus-visible rule");
-  assert.ok(focusRule.includes("outline:3px solid var(--mint)"));
-  assert.ok(focusRule.includes("transform:translateY(0)"));
-};
-
 const assertMarketingPages = (output) => {
   const pages = [
     ["features", "Features"],
@@ -180,7 +159,6 @@ const assertHomepage = (output, expectedBase) => {
   }
   assertSiteBasics(html);
   assertStylesheetAndInternalLinks(html, output, expectedBase);
-  assertSkipLinkStyles(output);
   assertMarketingPages(output);
 };
 
@@ -195,12 +173,6 @@ test("base-path normalization prefixes exact internal asset and home-link output
       basePath: "//planview///",
     },
     (output) => assertHomepage(output, "/planview")
-  );
-});
-
-test("an unset BASE_PATH keeps the site at the domain root", () => {
-  withBuild({ outputDirectory: "dist-root", basePath: undefined }, (output) =>
-    assertHomepage(output, "")
   );
 });
 

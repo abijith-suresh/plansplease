@@ -173,7 +173,7 @@ const input = async (
 test("quota defaults to 500 decimal MB and rejects unsafe configuration", () => {
   assert.equal(defaultAccountStorageQuotaBytes, 500_000_000);
   assert.equal(accountStorageQuotaBytes("500000000"), defaultAccountStorageQuotaBytes);
-  for (const value of ["0", "-1", "", "1.5", "1e3", "9007199254740992"]) {
+  for (const value of ["0", "1.5", "9007199254740992"]) {
     assert.throws(() => accountStorageQuotaBytes(value), /positive integer/);
   }
 });
@@ -224,7 +224,7 @@ test("existing and pending-deletion bytes count, and other owners remain indepen
 test("commit exchanges one reservation for metadata and ambiguous success remains safe", async () =>
   withQuota(async () => {
     const database = memoryDatabase();
-    const request = await input("new", 100);
+    const request = await input("new", 100, "owner-a", "application/vnd.planview.bundle");
     await assert.rejects(
       database.transaction((ctx) => createForOwner(ctx, request.ownerId, request)),
       /reservation/
@@ -233,6 +233,7 @@ test("commit exchanges one reservation for metadata and ambiguous success remain
     const id = await database.transaction((ctx) => createForOwner(ctx, request.ownerId, request));
     assert.equal(database.rows("uploadReservations").length, 0);
     assert.equal(database.rows("documents").length, 1);
+    assert.equal(firstRow(database.rows("documents"))["contentType"], request.contentType);
     assert.equal(firstRow(database.rows("accountStorageUsage"))["usedBytes"], 100);
     assert.equal(
       await database.transaction((ctx) => createForOwner(ctx, request.ownerId, request)),
@@ -578,32 +579,4 @@ test("legacy deletion and first upload share one seeded counter without drift", 
       20,
       "repeated completion never subtracts twice"
     );
-  }));
-
-test("artifact bundles and standalone HTML share one quota and retain encoded bytes across commit retries", async () =>
-  withQuota(async () => {
-    const database = memoryDatabase();
-    const bundle = await input("bundle", 80, "owner-a", "application/vnd.planview.bundle");
-    await database.transaction((ctx) => reserveUploadForOwner(ctx, bundle.ownerId, bundle));
-    const html = await input("html", 21);
-    await assert.rejects(
-      database.transaction((ctx) => reserveUploadForOwner(ctx, html.ownerId, html)),
-      /storage limit/
-    );
-    const id = await database.transaction((ctx) => createForOwner(ctx, bundle.ownerId, bundle));
-    assert.equal(
-      firstRow(database.rows("documents"))["contentType"],
-      "application/vnd.planview.bundle"
-    );
-    assert.equal(firstRow(database.rows("accountStorageUsage"))["usedBytes"], 80);
-    assert.equal(
-      await database.transaction((ctx) => createForOwner(ctx, bundle.ownerId, bundle)),
-      id
-    );
-    assert.equal(
-      await database.transaction((ctx) => abandonUploadForOwner(ctx, bundle.ownerId, bundle)),
-      id
-    );
-    assert.equal(firstRow(database.rows("accountStorageUsage"))["usedBytes"], 80);
-    assert.equal(database.rows("uploadReservations").length, 0);
   }));

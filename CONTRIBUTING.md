@@ -6,7 +6,7 @@
 - Conventional Commits; squash merge.
 - Run the checks below before handoff. Add focused tests for behavior changes.
 - Changes to shipped CLI files or its bundled runtime need a patch Changeset, including CLI documentation-only changes. `scripts/changeset-presence.mjs` defines the checked paths.
-- Editing a workspace's dependencies means updating the allow-list in `scripts/workspace-boundary.mjs`; the boundary check fails otherwise.
+- Keep cross-workspace dependencies consistent with the allow-list in `scripts/workspace-boundary.mjs`.
 
 ## Changesets
 
@@ -68,6 +68,10 @@ For composite TypeScript libraries, record dependency edges in `references` and
 add the project to the root solution `tsconfig.json`. Keep shared compiler
 settings in the root TypeScript base configs, and keep source includes and output
 paths in leaf configs.
+
+The boundary check reads workspace manifests and literal imports, exports, and
+module calls. It uses TypeScript for path aliases and Astro for component syntax.
+Review computed imports and custom module loaders when adding them.
 
 ## Verification
 

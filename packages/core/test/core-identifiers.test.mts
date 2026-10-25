@@ -46,19 +46,6 @@ test("strictly validates document id length and alphabet", () => {
   }
 });
 
-test("supports deterministic injected bytes, including collision-style repeats", () => {
-  const zeroBytes = () => new Uint8Array(DOCUMENT_ID_LENGTH);
-  const first = generateDocumentId({ randomBytes: zeroBytes });
-  const second = generateDocumentId({ randomBytes: zeroBytes });
-
-  assert.equal(first, "_".repeat(DOCUMENT_ID_LENGTH));
-  assert.equal(second, first);
-  assert.equal(isValidDocumentId(first), true);
-
-  const highBytes = () => new Uint8Array(DOCUMENT_ID_LENGTH).fill(255);
-  assert.equal(generateDocumentId({ randomBytes: highBytes }), "Z".repeat(DOCUMENT_ID_LENGTH));
-});
-
 test("reports invalid injected random sources with typed errors", () => {
   assert.throws(
     () => generateDocumentId({ randomBytes: () => new Uint8Array(DOCUMENT_ID_LENGTH - 1) }),

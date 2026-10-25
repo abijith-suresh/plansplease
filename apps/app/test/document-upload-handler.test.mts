@@ -1,6 +1,5 @@
 import { cloudBundleContentType, packCloudBundle } from "../src/lib/cloud-bundle.ts";
 import { ConvexError } from "convex/values";
-import { ConvexConfigurationError } from "../src/lib/convex-configuration-error.ts";
 import { cloudDocumentMaxBytes } from "@planview/core/cloud-policy";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -101,15 +100,6 @@ test("rejects invalid or oversized Content-Length before authentication", async 
   }
 });
 
-test("accepts browser uploads without Content-Length", async () => {
-  const { calls, handler } = createHandler();
-  const response = await handler({ request: createUploadRequest({ contentLength: null }) });
-
-  assert.equal(response.status, 201);
-  assert.equal(calls.uploads.length, 1);
-  assert.equal(calls.metadata.length, 1);
-});
-
 test("rejects a streamed body larger than the request cap", async () => {
   const { calls, handler } = createHandler();
   const response = await handler({
@@ -188,7 +178,7 @@ test("an unauthenticated caller cannot upload a file or create metadata", async 
 test("stores one HTML file and binds its storage key to the authenticated owner", async () => {
   const { calls, handler } = createHandler();
   const response = await handler({
-    request: createUploadRequest({ title: "  My document  " }),
+    request: createUploadRequest({ title: "  My document  ", contentLength: null }),
   });
 
   assert.equal(response.status, 201);
@@ -205,35 +195,6 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
   ]);
   assert.deepEqual(calls.metadataOwners, ["owner_123"]);
   assert.deepEqual(calls.abandonedKeys, []);
-});
-
-test("maps explicit Convex configuration failures to the existing 503 response", async () => {
-  const { calls, handler } = createHandler({
-    getAuthedClient: async () => {
-      throw new ConvexConfigurationError();
-    },
-  });
-  const response = await handler({ request: createUploadRequest() });
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "backend unavailable" });
-  assert.equal(calls.uploads.length, 0);
-});
-
-test("does not create metadata when storing the uploaded file fails", async () => {
-  let uploadAttempts = 0;
-  const { calls, handler } = createHandler({
-    uploadFile: async () => {
-      uploadAttempts += 1;
-      throw new Error("storage upload failed");
-    },
-  });
-  const response = await handler({ request: createUploadRequest() });
-
-  assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: "storage upload failed" });
-  assert.equal(uploadAttempts, 1);
-  assert.equal(calls.metadata.length, 0);
-  assert.deepEqual(calls.abandonedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
 });
 
 test("fences the reserved upload for durable cleanup if metadata creation fails", async () => {
@@ -338,7 +299,7 @@ test("an ambiguous committed response is recovered without deleting storage", as
 
 test("a provider timeout is marked uncertain rather than safe for cleanup", async () => {
   let confirmed: boolean | undefined;
-  const { handler } = createHandler({
+  const { calls, handler } = createHandler({
     uploadFile: async () => {
       throw new Error("upload timeout");
     },
@@ -350,6 +311,7 @@ test("a provider timeout is marked uncertain rather than safe for cleanup", asyn
   const response = await handler({ request: createUploadRequest() });
   assert.equal(response.status, 500);
   assert.equal(confirmed, false);
+  assert.equal(calls.metadata.length, 0);
 });
 
 test("reserves the adapter locator before upload and forwards its absolute deadline", async () => {

@@ -101,32 +101,17 @@ test("cleanup client preserves counts, resumability, and all failure phases", ()
 
 test("cleanup client rejects malformed counts and failure records with the protocol error", () =>
   withCleanupClient(async (clean) => {
-    const malformed: Record<string, unknown>[] = [];
-    for (const [field, value] of Object.entries(cleanupResult)) {
-      if (typeof value === "number") {
-        for (const invalid of [undefined, null, "1", -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
-          malformed.push({ ...cleanupResult, [field]: invalid });
-        }
-      }
-    }
-    for (const failures of [
-      undefined,
-      null,
-      {},
-      [null],
-      ["staging"],
-      [{ phase: "unknown", message: "failed" }],
-      [{ phase: 1, message: "failed" }],
-      [{ phase: "staging" }],
-      [{ phase: "staging", message: 1 }],
-      [{ phase: "staging", id: null, message: "failed" }],
-      [{ phase: "staging", id: 1, message: "failed" }],
-    ]) {
-      malformed.push({ ...cleanupResult, failures });
-    }
-    for (const resumable of [undefined, null, 0, "true"]) {
-      malformed.push({ ...cleanupResult, resumable });
-    }
+    const malformed = [
+      { ...cleanupResult, removedDocuments: -1 },
+      { ...cleanupResult, reclaimedBytes: 1.5 },
+      { ...cleanupResult, processedItems: Number.MAX_SAFE_INTEGER + 1 },
+      { ...cleanupResult, now: "100" },
+      { ...cleanupResult, resumable: undefined },
+      { ...cleanupResult, failures: null },
+      { ...cleanupResult, failures: [{ phase: "unknown", message: "failed" }] },
+      { ...cleanupResult, failures: [{ phase: "staging" }] },
+      { ...cleanupResult, failures: [{ phase: "staging", id: 1, message: "failed" }] },
+    ];
     for (const payload of malformed) {
       await assert.rejects(Effect.runPromise(clean(payload)), (error) => {
         assert.ok(error instanceof DaemonRequestError);

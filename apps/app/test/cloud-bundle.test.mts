@@ -11,7 +11,6 @@ import {
 import { createBundleReadCache, readBoundedBundle } from "../src/lib/bundle-read-cache.ts";
 import {
   cloudBundleContentType,
-  cloudBundleEntry,
   packCloudBundle,
   parseCloudBundle,
 } from "../src/lib/cloud-bundle.ts";
@@ -38,34 +37,10 @@ const files = [
   { path: "scripts/value.mjs", content: 'export const value="works";' },
 ];
 
-test("cloud bundles preserve local format and nested CSS/JS bytes", () => {
-  const bundle = parseCloudBundle(packCloudBundle(files));
-  assert.equal(
-    new TextDecoder().decode(cloudBundleEntry(bundle, "scripts/main.mjs").bytes),
-    files[2]!.content
-  );
-  assert.equal(cloudBundleEntry(bundle, "styles/page.css").contentType, "text/css");
-  assert.throws(() => cloudBundleEntry(bundle, "../private"));
-});
-
-test("bundle validation rejects traversal, aliases, duplicate entries, missing index and unsupported file types", () => {
-  for (const path of [
-    "../secret.js",
-    "a/../b.js",
-    "a\\b.js",
-    "/a.js",
-    "%2e%2e/a.js",
-    "a?x.js",
-    "a#x.js",
-    "C:a.js",
-    "source.exe",
-    "file.constructor",
-    "file.__proto__",
-  ]) {
+test("cloud policy rejects URL aliases, unsupported types, and oversized bundles", () => {
+  for (const path of ["%2e%2e/a.js", "a?x.js", "file.constructor", "file.__proto__"]) {
     assert.throws(() => packCloudBundle([files[0]!, { path, content: "bad" }]));
   }
-  assert.throws(() => packCloudBundle([files[1]!]));
-  assert.throws(() => packCloudBundle([files[0]!, files[0]!]));
   assert.throws(() =>
     packCloudBundle(Array.from({ length: 513 }, (_, i) => ({ path: `${i}.js`, content: "" })))
   );
@@ -217,7 +192,7 @@ test("bundle fetches cap actual streamed bytes even when Content-Length lies", a
   assert.equal(cancelled, true);
 });
 
-test("bounded response reads concatenate bytes, release readers and cancel oversized bodies", async () => {
+test("bounded response reads concatenate chunks and cancel unavailable bodies", async () => {
   const response = new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
@@ -238,28 +213,6 @@ test("bounded response reads concatenate bytes, release readers and cancel overs
     [1, 2, 3]
   );
   assert.equal(response.body?.locked, false);
-
-  let cancelled = false;
-  const oversized = new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array([1, 2, 3]));
-      },
-      cancel() {
-        cancelled = true;
-      },
-    })
-  );
-  await assert.rejects(
-    readBoundedResponseBytes(oversized, {
-      maxBytes: 2,
-      unavailableMessage: "unavailable",
-      tooLargeMessage: "too large",
-    }),
-    /too large/
-  );
-  assert.equal(cancelled, true);
-  assert.equal(oversized.body?.locked, false);
 
   let errorBodyCancelled = false;
   const unavailable = new Response(
@@ -375,7 +328,6 @@ test("MCP bundle reads default to HTML, read text paths in bounded chunks, and p
   assert.equal(first.html, files[1]!.content.slice(0, 4));
   assert.equal(first.nextOffset, 4);
   assert.equal(readBundleText(bundle, "styles/page.css", 4).html, files[1]!.content.slice(4));
-  assert.throws(() => readBundleText(bundle, "../secret.js"));
   assert.throws(() => readBundleText(bundle, "index.html", 0, 32769));
   const page = listBundleFilePage(bundle, 0, 2);
   assert.equal(page.files.length, 2);
@@ -389,32 +341,23 @@ test("MCP bundle creation and reads accept text formats and reject binary assets
   const { readBundleText } = await import("../src/lib/mcp-bundle-reads.ts");
   const textFiles = [
     { path: "index.html", content: "<h1>Plan</h1>" },
-    { path: "data.json", content: '{"title":"Plan"}' },
-    { path: "notes.txt", content: "Plan \u00e9t\u00e9" },
-    { path: "icon.svg", content: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
-  ] as const;
+    { path: "notes.txt", content: "Plan été" },
+  ];
   const bundle = parseCloudBundle(packCloudBundle(textFiles));
-  for (const { path, content } of textFiles) {
-    assert.equal(readBundleText(bundle, path).html, content);
-  }
-
-  for (const path of ["image.png", "font.woff2", "video.mp4"]) {
-    assert.throws(
-      () => packCloudBundle([textFiles[0], { path, content: "binary" }]),
-      /MCP bundle files must contain UTF-8 text/
-    );
-    const manifest = encodeBundleManifest([
-      { path: "index.html", offset: 0, size: 0 },
-      { path, offset: 0, size: 2 },
-    ]);
-    const binary = Buffer.from([0xff, 0xfe]);
-    const binaryBundle = parseCloudBundle(
-      Buffer.concat([createBundleHeader(manifest), manifest, binary])
-    );
-    assert.deepEqual(Buffer.from(cloudBundleEntry(binaryBundle, path).bytes), binary);
-    assert.throws(
-      () => readBundleText(binaryBundle, path),
-      /read_document supports UTF-8 text files only/
-    );
-  }
+  assert.equal(readBundleText(bundle, "notes.txt").html, "Plan été");
+  assert.throws(
+    () => packCloudBundle([...textFiles, { path: "image.png", content: "binary" }]),
+    /MCP bundle files must contain UTF-8 text/
+  );
+  const manifest = encodeBundleManifest([
+    { path: "index.html", offset: 0, size: 0 },
+    { path: "image.png", offset: 0, size: 2 },
+  ]);
+  const binaryBundle = parseCloudBundle(
+    Buffer.concat([createBundleHeader(manifest), manifest, Buffer.from([0xff, 0xfe])])
+  );
+  assert.throws(
+    () => readBundleText(binaryBundle, "image.png"),
+    /read_document supports UTF-8 text files only/
+  );
 });

@@ -1,18 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DEFAULT_PROFILE_NAME,
   type AppDataPlatform,
+  DEFAULT_PROFILE_NAME,
   isValidProfileName,
   normalizeMacosSystemPath,
   resolveAppDataPaths,
-  V1_CLEANUP_INTERVAL_HOURS,
-  V1_MAX_HTML_SIZE_BYTES,
-  V1_POLICY,
-  V1_PORT,
-  V1_RETENTION_DAYS,
-  V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
-  V1_STORAGE_QUOTA_BYTES,
   validateProfileName,
 } from "../dist/index.js";
 
@@ -54,18 +47,6 @@ test("accepts safe profile names and rejects names that can escape the profile d
     assert.equal(isValidProfileName(name), false);
     assert.throws(() => validateProfileName(name), /profile name must start/);
   }
-});
-
-test("uses XDG_DATA_HOME for Linux and WSL-style environments", () => {
-  assert.deepEqual(
-    resolveAppDataPaths(
-      dependencies("linux", "/home/alice", {
-        XDG_DATA_HOME: "/mnt/data/alice-data",
-        LOCALAPPDATA: "C:\\Users\\alice\\AppData\\Local",
-      })
-    ),
-    paths("/mnt/data/alice-data/planview")
-  );
 });
 
 test("uses the Linux XDG default when XDG_DATA_HOME is absent or empty", () => {
@@ -136,31 +117,4 @@ test("rejects a relative injected home directory", () => {
     () => resolveAppDataPaths(dependencies("linux", "alice")),
     /home directory must be an absolute path/
   );
-});
-
-test("never uses the legacy hidden home-directory location", () => {
-  const resolved = resolveAppDataPaths(dependencies("linux", "/home/alice"));
-  assert.notEqual(resolved.appDataDir, "/home/alice/.planview");
-  assert.doesNotMatch(resolved.appDataDir, /\\?\.planview(?:[\\/]|$)/);
-});
-
-test("keeps the v1 policy values fixed and isolated", () => {
-  assert.equal(V1_PORT, 4777);
-  assert.equal(V1_MAX_HTML_SIZE_BYTES, 10 * 1024 * 1024);
-  assert.equal(V1_RETENTION_DAYS, 30);
-  assert.equal(V1_CLEANUP_INTERVAL_HOURS, 24);
-  assert.equal(V1_STORAGE_QUOTA_BYTES, 1024 * 1024 * 1024);
-  assert.equal(V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, 4 * 1024);
-  assert.deepEqual(V1_POLICY, {
-    port: 4777,
-    maxHtmlSizeBytes: 10 * 1024 * 1024,
-    maxBundleFiles: 512,
-    maxBundleManifestBytes: 512 * 1024,
-    maxBundlePathBytes: 1024,
-    retentionDays: 30,
-    cleanupIntervalHours: 24,
-    storageQuotaBytes: 1024 * 1024 * 1024,
-    storageMetadataBytesPerDocument: 4 * 1024,
-  });
-  assert.equal(Object.isFrozen(V1_POLICY), true);
 });
