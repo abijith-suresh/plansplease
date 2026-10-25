@@ -1,6 +1,6 @@
 {
   "name": "@abijith-suresh/planview",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Turn an HTML file into a durable, immutable localhost URL.",
   "type": "module",
   "engines": {

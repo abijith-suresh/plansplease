@@ -1,5 +1,19 @@
 # @abijith-suresh/planview
 
+## 0.1.8
+
+### Patch Changes
+
+- 2e32dc8: Add the repository agent brief (`AGENTS.md`) so contributors and coding agents start from the repo's real conventions.
+- c0703a1: Add a reusable, light and dark HTML document starter to the bundled create-html skill.
+- e6e960c: Use the Vercel Skills CLI to install Planview's bundled Agent Skills.
+- 0414f92: Upload artifact folders to the cloud, preserving relative CSS and JavaScript alongside HTML. Hosted MCP can upload, list, and read artifact files.
+- 67b0646: Use the workspace sign-in entrypoint for CLI authorization so local workspaces can use development accounts while hosted workspaces keep GitHub sign-in.
+- 47ed532: Simplify publication, output handling, and daemon cleanup while preserving existing formats and recovery behavior. Reorganize the CLI reference around local previews, cloud uploads, profiles, and automation.
+- 4aa5373: Clarify CLI account sign-in and remote logout behavior in help and man pages.
+- 0c5c29f: Use the shared cloud upload policy and support npm 12 pack output when building the CLI package.
+- 4586390: Update the CLI's Effect runtime to the latest stable patch release.
+
 ## 0.1.7
 
 ### Patch Changes
