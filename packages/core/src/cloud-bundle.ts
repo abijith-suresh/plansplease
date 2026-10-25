@@ -35,6 +35,17 @@ const mimeTypes: Record<string, string> = {
   webm: "video/webm",
 };
 
+const textMimeTypes = new Set([
+  "text/html",
+  "text/css",
+  "text/javascript",
+  "application/json",
+  "text/plain",
+  "image/svg+xml",
+]);
+
+export const isCloudBundleTextMime = (contentType: string) => textMimeTypes.has(contentType);
+
 export function cloudBundleMime(path: string) {
   validateBundlePath(path);
   // URL-sensitive filenames are deliberately excluded from cloud v1. In
@@ -73,17 +84,7 @@ export function packCloudBundle(files: readonly { path: string; content: string 
   let size = 0;
   const encoded = files.map(({ path, content }) => {
     const mime = cloudBundleMime(path);
-    if (
-      ![
-        "text/html",
-        "text/css",
-        "text/javascript",
-        "application/json",
-        "text/plain",
-        "image/svg+xml",
-      ].includes(mime)
-    )
-      throw new Error("MCP bundle files must contain UTF-8 text");
+    if (!isCloudBundleTextMime(mime)) throw new Error("MCP bundle files must contain UTF-8 text");
     const bytes = new TextEncoder().encode(content);
     size += bytes.byteLength;
     if (size > cloudBundleMaxBytes)

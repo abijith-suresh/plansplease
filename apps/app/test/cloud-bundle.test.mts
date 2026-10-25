@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createBundleHeader, encodeBundleManifest } from "@planview/core/bundle-format";
 import { readBoundedResponseBytes } from "../src/lib/bounded-response.ts";
 import { createBundleAssetHandler } from "../src/lib/bundle-asset-handler.ts";
 import {
@@ -380,4 +381,38 @@ test("MCP bundle reads default to HTML, read text paths in bounded chunks, and p
   assert.equal(listBundleFilePage(bundle, 2, 2).nextOffset, null);
   assert.throws(() => listBundleFilePage(bundle, -1));
   assert.throws(() => listBundleFilePage(bundle, 0, 51));
+});
+
+test("MCP bundle creation and reads accept text formats and reject binary assets", async () => {
+  const { readBundleText } = await import("../src/lib/mcp-bundle-reads.ts");
+  const textFiles = [
+    { path: "index.html", content: "<h1>Plan</h1>" },
+    { path: "data.json", content: '{"title":"Plan"}' },
+    { path: "notes.txt", content: "Plan \u00e9t\u00e9" },
+    { path: "icon.svg", content: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
+  ] as const;
+  const bundle = parseCloudBundle(packCloudBundle(textFiles));
+  for (const { path, content } of textFiles) {
+    assert.equal(readBundleText(bundle, path).html, content);
+  }
+
+  for (const path of ["image.png", "font.woff2", "video.mp4"]) {
+    assert.throws(
+      () => packCloudBundle([textFiles[0], { path, content: "binary" }]),
+      /MCP bundle files must contain UTF-8 text/
+    );
+    const manifest = encodeBundleManifest([
+      { path: "index.html", offset: 0, size: 0 },
+      { path, offset: 0, size: 2 },
+    ]);
+    const binary = Buffer.from([0xff, 0xfe]);
+    const binaryBundle = parseCloudBundle(
+      Buffer.concat([createBundleHeader(manifest), manifest, binary])
+    );
+    assert.deepEqual(Buffer.from(cloudBundleEntry(binaryBundle, path).bytes), binary);
+    assert.throws(
+      () => readBundleText(binaryBundle, path),
+      /read_document supports UTF-8 text files only/
+    );
+  }
 });

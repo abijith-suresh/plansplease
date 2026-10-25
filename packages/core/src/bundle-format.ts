@@ -51,8 +51,6 @@ const isSafeInteger = (value: unknown): value is number =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const recordValue = (value: Record<string, unknown>, key: string) => value[key];
-
 const copyBytes = (value: Uint8Array) => new Uint8Array(value);
 
 const equalBytes = (left: Uint8Array, right: Uint8Array) =>
@@ -173,13 +171,16 @@ export const parseBundleManifest = (
       `The bundle manifest is not valid UTF-8 JSON: ${cause instanceof Error ? cause.message : String(cause)}.`
     );
   }
-  if (!isRecord(parsed) || recordValue(parsed, "version") !== 1) {
+  if (!isRecord(parsed)) {
     throw new InvalidBundleError("The bundle manifest version is unsupported.");
   }
-  if (recordValue(parsed, "index") !== "index.html") {
+  const { version, index, entries: rawEntries } = parsed;
+  if (version !== 1) {
+    throw new InvalidBundleError("The bundle manifest version is unsupported.");
+  }
+  if (index !== "index.html") {
     throw new InvalidBundleError("The bundle manifest must use index.html as its entry page.");
   }
-  const rawEntries = recordValue(parsed, "entries");
   if (!Array.isArray(rawEntries)) {
     throw new InvalidBundleError("The bundle manifest entries must be an array.");
   }
@@ -187,9 +188,7 @@ export const parseBundleManifest = (
     if (!isRecord(rawEntry)) {
       throw new InvalidBundleError("The bundle manifest contains an invalid entry.");
     }
-    const path = recordValue(rawEntry, "path");
-    const offset = recordValue(rawEntry, "offset");
-    const size = recordValue(rawEntry, "size");
+    const { path, offset, size } = rawEntry;
     if (typeof path !== "string" || !isSafeInteger(offset) || !isSafeInteger(size)) {
       throw new InvalidBundleError("The bundle manifest contains an invalid entry.");
     }

@@ -17,11 +17,9 @@ type OperationEntry = {
   readonly onRequestAbort?: () => void;
 };
 
-// Publication and cleanup still share a short mutation gate. It preserves the
-// publication file-to-metadata commit boundary, while reads use independent
-// leases and never wait behind an arbitrary response transfer. Unlike a bare
-// promise tail, the gate can reject queued work and abort the operation that is
-// currently at the mutation boundary during daemon shutdown.
+// Serialize publication and cleanup across the file-to-metadata commit.
+// Reads use separate leases. Shutdown rejects queued mutations and can abort
+// the active mutation after its drain deadline.
 export const createOperationGate = () => {
   const queued: OperationEntry[] = [];
   const idleWaiters = new Set<() => void>();

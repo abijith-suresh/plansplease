@@ -1,4 +1,4 @@
-import { cloudBundleEntry, type CloudBundle } from "./cloud-bundle.ts";
+import { cloudBundleEntry, isCloudBundleTextMime, type CloudBundle } from "./cloud-bundle.ts";
 
 export function readBundleText(
   bundle: CloudBundle,
@@ -15,16 +15,7 @@ export function readBundleText(
   )
     throw new Error("Invalid bundle read range");
   const file = cloudBundleEntry(bundle, path);
-  if (
-    ![
-      "text/html",
-      "text/css",
-      "text/javascript",
-      "application/json",
-      "text/plain",
-      "image/svg+xml",
-    ].includes(file.contentType)
-  )
+  if (!isCloudBundleTextMime(file.contentType))
     throw new Error("read_document supports UTF-8 text files only");
   const content = new TextDecoder().decode(file.bytes);
   return {

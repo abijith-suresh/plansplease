@@ -240,14 +240,12 @@ export const createDocumentPublicationCoordinator = (
 
   const publishPromise = async (sourcePath: string, signal?: AbortSignal) => {
     signal?.throwIfAborted();
-    // This map is intentionally created per call. A coordinator can be reused
-    // and concurrent calls must never compensate one another's handles.
+    // Track handles per call so concurrent publications cannot compensate
+    // one another's resources.
     const ownedHandles = new Map<string, OwnedHandleState>();
     const targetLockStates = new Map<string, DocumentFileResourceState>();
-    // A non-typed adapter fault can occur after it creates a resource but
-    // before it can return that resource's handle. Keep anonymous unknown
-    // entries so recovery does not imply that the adapter's private pathname
-    // space is empty.
+    // An adapter can create a resource and throw before returning its handle.
+    // Count those unknown resources so recovery reports them.
     let possibleUnidentifiedStagedFiles = 0;
     let possibleUnidentifiedFinalizationLocks = 0;
     let snapshotHandle: StagedDocumentFileHandle | undefined;
@@ -945,9 +943,7 @@ export const createDocumentPublicationCoordinator = (
       ) {
         throw cause;
       }
-      // The outer guard is intentionally narrow: every owned handle remains
-      // invocation-local, and unexpected adapter errors still get one bounded
-      // compensation attempt rather than cleaning another publish's state.
+      // Unexpected adapter errors get one compensation attempt for this call.
       await compensateWithoutId(cause);
       throw makePublicationError({ sourcePath, cause });
     }
