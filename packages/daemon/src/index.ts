@@ -14,7 +14,6 @@ import {
 import { request as httpRequest } from "node:http";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { pipeline } from "node:stream/promises";
 import {
   DEFAULT_PROFILE_NAME,
   isValidProfileName,
@@ -47,9 +46,6 @@ import {
   resolveDaemonPaths,
   TEST_ADOPTION_PAUSE_ENV,
   TEST_CLEANUP_PAUSE_ENV,
-  TEST_PUBLISH_PAUSE_ENV,
-  TEST_PUBLISH_PAUSE_ONCE_ENV,
-  TEST_UNCOOPERATIVE_PUBLISH_ENV,
   type DaemonConfig,
   type DaemonConfigOptions,
   type DaemonPathOptions,
@@ -1765,78 +1761,21 @@ export type PublishDaemonOptions = Readonly<{
 }>;
 
 const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
-  const numericFields = [
-    "now",
-    "cutoff",
-    "removedDocuments",
-    "removedDocumentFiles",
-    "removedMetadataRows",
-    "removedStagedFiles",
-    "removedReadReferences",
-    "removedFinalizationLocks",
-    "reclaimedBytes",
-    "retainedEntries",
-    "processedItems",
-  ] as const;
-  if (
-    numericFields.some(
-      (field) =>
-        typeof recordValue(payload, field) !== "number" ||
-        !Number.isSafeInteger(recordValue(payload, field)) ||
-        (recordValue(payload, field) as number) < 0
-    )
-  ) {
+  const invalidResult = (): never => {
     throw new DaemonRequestError({
       path: DAEMON_CLEAN_PATH,
       cause: payload,
       message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
     });
-  }
-  const rawFailures = recordValue(payload, "failures");
-  if (!Array.isArray(rawFailures)) {
-    throw new DaemonRequestError({
-      path: DAEMON_CLEAN_PATH,
-      cause: payload,
-      message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
-    });
-  }
-  const failures = rawFailures.map((failure) => {
-    if (!isRecord(failure) || typeof recordValue(failure, "phase") !== "string") {
-      throw new DaemonRequestError({
-        path: DAEMON_CLEAN_PATH,
-        cause: payload,
-        message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
-      });
+  };
+  const numberValue = (field: Exclude<keyof DocumentCleanupResult, "resumable" | "failures">) => {
+    const value = recordValue(payload, field);
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+      return invalidResult();
     }
-    const phase = recordValue(failure, "phase");
-    if (phase !== "staging" && phase !== "metadata" && phase !== "document-file") {
-      throw new DaemonRequestError({
-        path: DAEMON_CLEAN_PATH,
-        cause: payload,
-        message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
-      });
-    }
-    const id = recordValue(failure, "id");
-    const message = recordValue(failure, "message");
-    if ((id !== undefined && typeof id !== "string") || typeof message !== "string") {
-      throw new DaemonRequestError({
-        path: DAEMON_CLEAN_PATH,
-        cause: payload,
-        message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
-      });
-    }
-    const normalizedPhase: DocumentCleanupFailure["phase"] =
-      phase === "staging" ? "staging" : phase === "metadata" ? "metadata" : "document-file";
-    return {
-      phase: normalizedPhase,
-      ...(id === undefined ? {} : { id }),
-      cause: recordValue(failure, "cause"),
-      message,
-    };
-  });
-  const numberValue = (field: (typeof numericFields)[number]) =>
-    recordValue(payload, field) as number;
-  return {
+    return value;
+  };
+  const counts = {
     now: numberValue("now"),
     cutoff: numberValue("cutoff"),
     removedDocuments: numberValue("removedDocuments"),
@@ -1848,19 +1787,29 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
     reclaimedBytes: numberValue("reclaimedBytes"),
     retainedEntries: numberValue("retainedEntries"),
     processedItems: numberValue("processedItems"),
-    resumable: (() => {
-      const value = recordValue(payload, "resumable");
-      if (typeof value !== "boolean") {
-        throw new DaemonRequestError({
-          path: DAEMON_CLEAN_PATH,
-          cause: payload,
-          message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
-        });
-      }
-      return value;
-    })(),
-    failures,
-  } satisfies DocumentCleanupResult;
+  };
+  const rawFailures = recordValue(payload, "failures");
+  if (!Array.isArray(rawFailures)) {
+    return invalidResult();
+  }
+  const failures = rawFailures.map((failure): DocumentCleanupFailure => {
+    if (!isRecord(failure)) {
+      return invalidResult();
+    }
+    const { phase, id, message, cause } = failure;
+    if (phase !== "staging" && phase !== "metadata" && phase !== "document-file") {
+      return invalidResult();
+    }
+    if ((id !== undefined && typeof id !== "string") || typeof message !== "string") {
+      return invalidResult();
+    }
+    return { phase, ...(id === undefined ? {} : { id }), cause, message };
+  });
+  const resumable = recordValue(payload, "resumable");
+  if (typeof resumable !== "boolean") {
+    return invalidResult();
+  }
+  return { ...counts, resumable, failures } satisfies DocumentCleanupResult;
 };
 
 const publishDocumentPromise = async (

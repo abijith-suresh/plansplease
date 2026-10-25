@@ -5,11 +5,6 @@ preview. It can also upload the same inputs to an account workspace when a
 compatible app and backend are available. The repository includes the CLI,
 local daemon and storage packages, cloud app, marketing site, and documentation.
 
-The command replaces the former `planview` executable. Update existing scripts
-to use `plansplease`; profiles, documents, credentials, daemon state, data paths,
-`PLANVIEW_*` settings, package names, and installed skill directories retain
-their existing names.
-
 ## Develop
 
 Use Node.js 24.19.0 and npm 11.16.0:

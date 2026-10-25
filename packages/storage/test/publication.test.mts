@@ -257,114 +257,216 @@ test("keeps a staged snapshot across file collisions even when input is deleted 
     }
   ));
 
-test("does not treat matching metadata fields as ownership after a unique error", () =>
-  withEnvironment(
-    async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
-      const source = join(directory, "ambiguous-commit.html");
-      await writeFile(source, "committed despite throw");
+for (const commitMode of ["fenced", "legacy"] as const) {
+  const storeFor = (store: DocumentFileStore): DocumentFileStore =>
+    commitMode === "fenced"
+      ? store
+      : {
+          ...store,
+          // Simulate an older adapter that does not invoke the commit callback.
+          finalizeStagedFile: (handle, documentId) => store.finalizeStagedFile(handle, documentId),
+        };
+
+  test(`${commitMode} commit does not treat matching metadata fields as ownership after a unique error`, () =>
+    withEnvironment(
+      async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
+        const source = join(directory, "ambiguous-commit.html");
+        await writeFile(source, "committed despite throw");
+        let generated = 0;
+        const throwingMetadata: MetadataStore = {
+          ...metadataStore,
+          insertDocumentMetadata: (metadata: DocumentMetadata) => {
+            metadataStore.insertDocumentMetadata(metadata);
+            const error = Object.assign(new Error("unique after commit"), {
+              code: "SQLITE_CONSTRAINT_UNIQUE",
+            });
+            throw error;
+          },
+        };
+
+        await assert.rejects(
+          runEffect(
+            coordinator(storeFor(documentFileStore), throwingMetadata, {
+              generateId: () => idAt([firstId, secondId], generated++),
+            }).publish(source)
+          ),
+          (error) =>
+            error instanceof DocumentPublicationError &&
+            error.orphan?.kind === "document-file-and-metadata-row" &&
+            error.orphan.resources.metadataRows[0]?.state === "unknown"
+        );
+        assert.equal(generated, 1);
+        assert.notEqual(metadataStore.getDocumentMetadata(firstId), undefined);
+        assert.equal(
+          (await readFile(publicationFile(documentsDir, firstId))).toString(),
+          "committed despite throw"
+        );
+        assert.deepEqual(await readdir(stagingDir), []);
+      }
+    ));
+
+  test(`${commitMode} commit retains an ambiguous unique publication pair instead of silently retrying`, () =>
+    withEnvironment(
+      async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
+        const source = join(directory, "ambiguous-unique.html");
+        await writeFile(source, "possibly committed");
+        let generated = 0;
+        let metadataLookups = 0;
+        const ambiguousMetadata: MetadataStore = {
+          ...metadataStore,
+          insertDocumentMetadata: () => {
+            const error = Object.assign(new Error("unique boundary failed"), {
+              code: "SQLITE_CONSTRAINT_UNIQUE",
+            });
+            throw error;
+          },
+          getDocumentMetadata: () => {
+            if (metadataLookups++ === 0) {
+              return undefined;
+            }
+            throw new Error("metadata read boundary failed");
+          },
+        };
+
+        await assert.rejects(
+          runEffect(
+            coordinator(storeFor(documentFileStore), ambiguousMetadata, {
+              generateId: () => idAt([firstId, secondId], generated++),
+            }).publish(source)
+          ),
+          (error) =>
+            error instanceof DocumentPublicationError &&
+            error.orphan?.kind === "document-file-and-metadata-row" &&
+            error.orphan.resources.metadataRows[0]?.state === "unknown" &&
+            error.orphan.resources.documentFiles[0]?.id === firstId
+        );
+        assert.equal(generated, 1);
+        assert.equal(
+          (await readFile(publicationFile(documentsDir, firstId))).toString(),
+          "possibly committed"
+        );
+        assert.equal((await readdir(stagingDir)).length, 0);
+      }
+    ));
+
+  test(`${commitMode} commit retries a unique error only after metadata proves the id is absent`, () =>
+    withEnvironment(async ({ directory, documentFileStore, metadataStore, stagingDir }) => {
+      const source = join(directory, "absent-after-unique.html");
+      await writeFile(source, "retry after proof");
       let generated = 0;
       const throwingMetadata: MetadataStore = {
         ...metadataStore,
         insertDocumentMetadata: (metadata: DocumentMetadata) => {
-          metadataStore.insertDocumentMetadata(metadata);
-          const error = Object.assign(new Error("unique after commit"), {
-            code: "SQLITE_CONSTRAINT_UNIQUE",
-          });
-          throw error;
-        },
-      };
-
-      await assert.rejects(
-        runEffect(
-          coordinator(documentFileStore, throwingMetadata, {
-            generateId: () => idAt([firstId, secondId], generated++),
-          }).publish(source)
-        ),
-        (error) =>
-          error instanceof DocumentPublicationError &&
-          error.orphan?.kind === "document-file-and-metadata-row" &&
-          error.orphan.resources.metadataRows[0]?.state === "unknown"
-      );
-      assert.equal(generated, 1);
-      assert.notEqual(metadataStore.getDocumentMetadata(firstId), undefined);
-      assert.equal(
-        (await readFile(publicationFile(documentsDir, firstId))).toString(),
-        "committed despite throw"
-      );
-      assert.deepEqual(await readdir(stagingDir), []);
-    }
-  ));
-
-test("retains an ambiguous unique publication pair instead of silently retrying", () =>
-  withEnvironment(
-    async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
-      const source = join(directory, "ambiguous-unique.html");
-      await writeFile(source, "possibly committed");
-      let generated = 0;
-      let metadataLookups = 0;
-      const ambiguousMetadata: MetadataStore = {
-        ...metadataStore,
-        insertDocumentMetadata: () => {
-          const error = Object.assign(new Error("unique boundary failed"), {
-            code: "SQLITE_CONSTRAINT_UNIQUE",
-          });
-          throw error;
-        },
-        getDocumentMetadata: () => {
-          if (metadataLookups++ === 0) {
-            return undefined;
+          if (metadata.id === firstId) {
+            const error = Object.assign(new Error("rolled back unique boundary"), {
+              code: "SQLITE_CONSTRAINT_UNIQUE",
+            });
+            throw error;
           }
-          throw new Error("metadata read boundary failed");
+          metadataStore.insertDocumentMetadata(metadata);
         },
       };
-
-      await assert.rejects(
-        runEffect(
-          coordinator(documentFileStore, ambiguousMetadata, {
-            generateId: () => idAt([firstId, secondId], generated++),
-          }).publish(source)
-        ),
-        (error) =>
-          error instanceof DocumentPublicationError &&
-          error.orphan?.kind === "document-file-and-metadata-row" &&
-          error.orphan.resources.metadataRows[0]?.state === "unknown" &&
-          error.orphan.resources.documentFiles[0]?.id === firstId
+      const result = await runEffect(
+        coordinator(storeFor(documentFileStore), throwingMetadata, {
+          generateId: () => idAt([firstId, secondId], generated++),
+        }).publish(source)
       );
-      assert.equal(generated, 1);
-      assert.equal(
-        (await readFile(publicationFile(documentsDir, firstId))).toString(),
-        "possibly committed"
-      );
-      assert.equal((await readdir(stagingDir)).length, 0);
-    }
-  ));
+      assert.equal(result.id, secondId);
+      assert.equal(generated, 2);
+      assert.deepEqual(await readdir(stagingDir), []);
+    }));
 
-test("retries a unique error only after metadata proves the id is absent", () =>
-  withEnvironment(async ({ directory, documentFileStore, metadataStore, stagingDir }) => {
-    const source = join(directory, "absent-after-unique.html");
-    await writeFile(source, "retry after proof");
-    let generated = 0;
-    const throwingMetadata: MetadataStore = {
-      ...metadataStore,
-      insertDocumentMetadata: (metadata: DocumentMetadata) => {
-        if (metadata.id === firstId) {
-          const error = Object.assign(new Error("rolled back unique boundary"), {
-            code: "SQLITE_CONSTRAINT_UNIQUE",
-          });
-          throw error;
+  test(`${commitMode} commit bounds metadata collision retries and removes owned artifacts`, () =>
+    withEnvironment(
+      async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
+        const source = join(directory, "metadata-retry-limit.html");
+        await writeFile(source, "never committed");
+        const cause = Object.assign(new Error("unique metadata boundary"), {
+          code: "SQLITE_CONSTRAINT_UNIQUE",
+        });
+        const throwingMetadata: MetadataStore = {
+          ...metadataStore,
+          insertDocumentMetadata: () => {
+            throw cause;
+          },
+        };
+        await assert.rejects(
+          runEffect(
+            coordinator(storeFor(documentFileStore), throwingMetadata, {
+              generateId: () => firstId,
+              maxAttempts: 2,
+            }).publish(source)
+          ),
+          (error) =>
+            error instanceof DocumentPublicationRetryLimitError &&
+            error.attempts === 2 &&
+            error.cause === cause
+        );
+        assert.deepEqual(await readdir(documentsDir), []);
+        assert.deepEqual(await readdir(stagingDir), []);
+        assert.equal(metadataStore.getDocumentMetadata(firstId), undefined);
+      }
+    ));
+
+  for (const observation of ["absent", "unreadable"] as const) {
+    test(`${commitMode} commit handles a throwing collision classifier with ${observation} metadata`, () =>
+      withEnvironment(
+        async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
+          const source = join(directory, "throwing-classifier.html");
+          await writeFile(source, "possibly committed");
+          const classifierCause = new Error("classifier failed");
+          const observationCause = new Error("metadata lookup failed");
+          let lookups = 0;
+          const throwingMetadata: MetadataStore = {
+            ...metadataStore,
+            insertDocumentMetadata: () => {
+              throw new Error("metadata insert failed");
+            },
+            getDocumentMetadata: () => {
+              if (lookups++ > 0 && observation === "unreadable") {
+                throw observationCause;
+              }
+              return undefined;
+            },
+          };
+          await assert.rejects(
+            runEffect(
+              coordinator(storeFor(documentFileStore), throwingMetadata, {
+                generateId: () => firstId,
+                isMetadataUniquenessCollision: () => {
+                  throw classifierCause;
+                },
+              }).publish(source)
+            ),
+            (error) => {
+              assert.ok(error instanceof DocumentPublicationError);
+              if (observation === "absent") {
+                assert.equal(error.cause, classifierCause);
+                assert.equal(error.orphan, undefined);
+              } else {
+                assert.ok(error.cause instanceof AggregateError);
+                assert.deepEqual(error.cause.errors, [classifierCause, observationCause]);
+                assert.equal(error.orphan?.kind, "document-file-and-metadata-row");
+                assert.equal(error.orphan.resources.metadataRows[0]?.state, "unknown");
+              }
+              return true;
+            }
+          );
+          assert.deepEqual(await readdir(stagingDir), []);
+          assert.deepEqual(
+            await readdir(documentsDir),
+            observation === "absent" ? [] : [`${firstId}.html`]
+          );
+          if (observation === "unreadable") {
+            assert.equal(
+              await readFile(publicationFile(documentsDir, firstId), "utf8"),
+              "possibly committed"
+            );
+          }
         }
-        metadataStore.insertDocumentMetadata(metadata);
-      },
-    };
-    const result = await runEffect(
-      coordinator(documentFileStore, throwingMetadata, {
-        generateId: () => idAt([firstId, secondId], generated++),
-      }).publish(source)
-    );
-    assert.equal(result.id, secondId);
-    assert.equal(generated, 2);
-    assert.deepEqual(await readdir(stagingDir), []);
-  }));
+      ));
+  }
+}
 
 test("retries file and SQLite metadata uniqueness collisions without exposing partial state", () =>
   withEnvironment(

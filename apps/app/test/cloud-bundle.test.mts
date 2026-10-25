@@ -337,7 +337,9 @@ test("public bundle assets require current sharing authorization before every ca
           }
         : null;
     },
-    load: async () => {
+    load: async (provider, key) => {
+      assert.equal(provider, "uploadthing");
+      assert.equal(key, claims.storageKey);
       reads += 1;
       return parseCloudBundle(packCloudBundle(files));
     },

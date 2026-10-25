@@ -236,25 +236,41 @@ test("startup reconciliation removes orphan files, missing rows, mismatches, and
     }
   ));
 
-test("reconciles read markers left by a crashed local reader", () =>
-  withEnvironment(async ({ documentFileStore, stagingDir }) => {
-    const documentId = id("r");
-    const token = "a".repeat(22);
-    const marker = join(stagingDir, `.read.${documentId}.${token}`);
-    await writeFile(
-      marker,
-      JSON.stringify({
-        version: 1,
-        owner: { pid: 99_999_999, host: hostname() },
-        acquiredAt: DAY,
-      })
-    );
+for (const mode of ["unbounded", "bounded"] as const) {
+  test(`${mode} reconciliation removes only read markers with a dead local owner`, () =>
+    withEnvironment(async ({ documentFileStore, stagingDir }) => {
+      const marker = (token: string) => `.read.${id("r")}.${token.repeat(22)}`;
+      const references = [
+        { name: marker("a"), owner: { pid: 99_999_999, host: hostname() } },
+        { name: marker("b"), owner: { pid: process.pid, host: hostname() } },
+        { name: marker("c"), owner: { pid: 99_999_999, host: "another-host" } },
+      ];
+      for (const { name, owner } of references) {
+        await writeFile(
+          join(stagingDir, name),
+          JSON.stringify({ version: 1, owner, acquiredAt: DAY })
+        );
+      }
+      await writeFile(join(stagingDir, marker("d")), "{malformed");
+      const unknownEntries = [".invalid.lock", ".invalid.target.lock", "unknown"];
+      for (const name of unknownEntries) {
+        await writeFile(join(stagingDir, name), "retain");
+      }
 
-    const result = await documentFileStore.reconcileDocumentFiles();
-    assert.equal(result.readReferencesRemoved, 1);
-    assert.equal(result.retainedEntries, 0);
-    assert.deepEqual(await readdir(stagingDir), []);
-  }));
+      const result = await documentFileStore.reconcileDocumentFiles(
+        mode === "bounded" ? { maxItems: 128 } : undefined
+      );
+      assert.equal(result.readReferencesRemoved, 1);
+      assert.equal(result.finalizationLocksRemoved, 0);
+      assert.equal(result.retainedEntries, 6);
+      assert.equal(result.processedItems, 7);
+      assert.equal(result.resumable, false);
+      assert.deepEqual(
+        (await readdir(stagingDir)).sort(),
+        [marker("b"), marker("c"), marker("d"), ...unknownEntries].sort()
+      );
+    }));
+}
 
 test("rechecks fresh and stale lock state and reports only removed locks", () =>
   withEnvironment(async ({ documentFileStore, stagingDir }) => {

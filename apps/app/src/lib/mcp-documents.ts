@@ -1,29 +1,26 @@
 import { randomUUID } from "node:crypto";
-import { readBundleText, listBundleFilePage } from "./mcp-bundle-reads.ts";
-import { cloudBundleContentType, packCloudBundle, cloudBundleMime } from "./cloud-bundle.ts";
-import { serverBundleReadCache, bundleCacheKey, readBoundedBundle } from "./bundle-read-cache.ts";
 import {
   cloudDocumentMaxBytes,
   cloudDocumentTitleMaxLength,
   cloudDocumentTitleMinLength,
 } from "@planview/core/cloud-policy";
-import { readBoundedResponseBytes } from "./bounded-response.ts";
-
 import type { Id } from "../../convex/_generated/dataModel";
-
+import { readBoundedResponseBytes } from "./bounded-response.ts";
+import { cloudBundleContentType, cloudBundleMime, packCloudBundle } from "./cloud-bundle.ts";
 import { api, getUnauthedConvexClient } from "./convex-server";
+import { createAbandonDocumentProof, createDocumentProof } from "./document-mutation-proof";
 import { createDocumentReadCache } from "./document-read-cache";
-import { createDocumentProof, createAbandonDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
-import { uploadReservedDocument } from "./reserved-document-upload";
+import { listBundleFilePage, readBundleText } from "./mcp-bundle-reads.ts";
 import { createMcpDocumentProof } from "./mcp-document-proof";
+import { uploadReservedDocument } from "./reserved-document-upload";
+import { loadStoredBundle } from "./stored-bundle.ts";
 
 const maxFileBytes = cloudDocumentMaxBytes;
 const maxReadCharacters = 32_768;
 // Each MCP request creates a service, but sequential chunk reads can share one
 // bounded document in this process. Access is still checked by Convex first.
 const documentReadCache = createDocumentReadCache();
-const bundleReadCache = serverBundleReadCache;
 
 export type McpDocument = {
   id: string;
@@ -162,15 +159,7 @@ export function createMcpDocumentService(ownerId: string) {
       if (document.contentType === cloudBundleContentType) {
         if (!document.storageProvider || !document.storageKey)
           throw new Error("Bundle storage is unavailable");
-        const bundle = await bundleReadCache.load(
-          bundleCacheKey(document.storageProvider, document.storageKey),
-          async () => {
-            const url = await getDocumentStorage(document.storageProvider!).getReadUrl(
-              document.storageKey!
-            );
-            return readBoundedBundle(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
-          }
-        );
+        const bundle = await loadStoredBundle(document.storageProvider, document.storageKey);
         return {
           ...present(document),
           ...readBundleText(bundle, path ?? "index.html", offset, maxCharacters),
@@ -229,15 +218,7 @@ export function createMcpDocumentService(ownerId: string) {
         !document.storageKey
       )
         throw new Error("Document is not a bundle");
-      const bundle = await bundleReadCache.load(
-        bundleCacheKey(document.storageProvider!, document.storageKey!),
-        async () => {
-          const url = await getDocumentStorage(document.storageProvider!).getReadUrl(
-            document.storageKey!
-          );
-          return readBoundedBundle(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
-        }
-      );
+      const bundle = await loadStoredBundle(document.storageProvider, document.storageKey);
       return { id, ...listBundleFilePage(bundle, offset, limit) };
     },
 

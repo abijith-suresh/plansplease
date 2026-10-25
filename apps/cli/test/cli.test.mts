@@ -445,25 +445,15 @@ test("importing the entrypoint does not execute the command", () => {
 });
 
 test("a starter crash after daemon lock adoption does not strand lifecycle commands", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-daemon-adoption-test-"));
-  const appDataDir = join(runtimeRoot, "app-data");
-  const daemonRuntimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment: NodeJS.ProcessEnv = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: daemonRuntimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-    PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS: "2000",
-  };
+  const { runtimeDir, environment, executeInFixture, cleanup } = await createLocalFixture(
+    "daemon-adoption",
+    { PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS: "2000" }
+  );
   const starter = spawn(process.execPath, [cli, "start"], {
     env: environment,
     stdio: "ignore",
   });
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
-  const lockPath = join(daemonRuntimeDir, "lifecycle.lock");
+  const lockPath = join(runtimeDir, "lifecycle.lock");
 
   try {
     const adopted = await waitFor(() => {
@@ -474,7 +464,7 @@ test("a starter crash after daemon lock adoption does not strand lifecycle comma
 
     starter.kill();
     await waitForExit(starter);
-    await waitFor(() => JSON.parse(readFileSync(join(daemonRuntimeDir, "daemon.json"), "utf8")));
+    await waitFor(() => JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8")));
     await waitFor(() => (existsSync(lockPath) ? undefined : true));
 
     const restarted = executeInFixture("restart");
@@ -489,42 +479,29 @@ test("a starter crash after daemon lock adoption does not strand lifecycle comma
       starter.kill();
       await waitForExit(starter).catch(() => undefined);
     }
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("start, status, stop, and restart are process-backed and private", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-daemon-test-"));
-  const appDataDir = join(runtimeRoot, "app-data");
-  const daemonRuntimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: daemonRuntimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeDir, port, executeInFixture, cleanup } = await createLocalFixture("daemon");
 
   try {
     const before = executeInFixture("status");
     assert.equal(before.status, 0);
     assert.match(before.stdout, /not running/);
-    assert.equal(existsSync(daemonRuntimeDir), false, "status must not create runtime state");
+    assert.equal(existsSync(runtimeDir), false, "status must not create runtime state");
 
     const started = executeInFixture("start");
     assert.equal(started.status, 0, started.stderr);
     assert.match(started.stdout, /started/);
 
-    const descriptor = JSON.parse(readFileSync(join(daemonRuntimeDir, "daemon.json"), "utf8"));
+    const descriptor = JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8"));
     assert.equal(descriptor.host, "127.0.0.1");
     assert.equal(descriptor.port, port);
     if (process.platform !== "win32") {
-      assert.equal(statSync(daemonRuntimeDir).mode & 0o077, 0);
-      assert.equal(statSync(join(daemonRuntimeDir, "daemon.json")).mode & 0o077, 0);
+      assert.equal(statSync(runtimeDir).mode & 0o077, 0);
+      assert.equal(statSync(join(runtimeDir, "daemon.json")).mode & 0o077, 0);
     }
 
     const unauthorized = await fetch(`http://127.0.0.1:${port}/__planview/status`);
@@ -548,13 +525,12 @@ test("start, status, stop, and restart are process-backed and private", async ()
     const stopped = executeInFixture("stop");
     assert.equal(stopped.status, 0, stopped.stderr);
     assert.match(stopped.stdout, /stopped/);
-    assert.equal(existsSync(join(daemonRuntimeDir, "daemon.json")), false);
+    assert.equal(existsSync(join(runtimeDir, "daemon.json")), false);
     const after = executeInFixture("status");
     assert.equal(after.status, 0);
     assert.match(after.stdout, /not running/);
   } finally {
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
@@ -644,20 +620,30 @@ const freePort = (): Promise<number> =>
     });
   });
 
-test("metadata commands emit one JSON object when requested", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-json-cli-test-"));
+const createLocalFixture = async (name: string, overrides: NodeJS.ProcessEnv = {}) => {
+  const port = await freePort();
+  const runtimeRoot = mkdtempSync(join(tmpdir(), `planview-${name}-test-`));
   const appDataDir = join(runtimeRoot, "data");
   const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
+  const environment: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "test",
     PLANVIEW_APP_DATA_DIR: appDataDir,
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
+    ...overrides,
   };
   const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const cleanup = async () => {
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  };
+  return { runtimeRoot, appDataDir, runtimeDir, port, environment, executeInFixture, cleanup };
+};
+
+test("metadata commands emit one JSON object when requested", async () => {
+  const { runtimeRoot, port, executeInFixture, cleanup } = await createLocalFixture("json-cli");
 
   try {
     const stopped = executeInFixture("status", "--json");
@@ -712,25 +698,14 @@ test("metadata commands emit one JSON object when requested", async () => {
     assert.equal(finalStop.status, 0, finalStop.stderr);
     assert.deepEqual(JSON.parse(finalStop.stdout), { state: "stopped" });
   } finally {
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
-test("publish validates before startup and preserves the source file", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-validation-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+test("publish validates before startup and preserves the source file", async (t) => {
+  const { runtimeRoot, runtimeDir, executeInFixture, cleanup } =
+    await createLocalFixture("publish-validation");
+  t.after(cleanup);
   const invalidPath = join(runtimeRoot, "source.txt");
   writeFileSync(invalidPath, "not html");
   const invalid = executeInFixture("publish", invalidPath);
@@ -746,7 +721,6 @@ test("publish validates before startup and preserves the source file", async () 
   assert.equal(oversized.stdout, "");
   assert.match(oversized.stderr, /must not exceed 10485760 bytes/);
   assert.equal(existsSync(runtimeDir), false);
-  await removeFixture(runtimeRoot);
 });
 
 test("publish removes a prepared page bundle when daemon startup fails", async () => {
@@ -790,18 +764,9 @@ test("publish removes a prepared page bundle when daemon startup fails", async (
 });
 
 test("publish budgets a slow maximum-size publication before returning its committed URL", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-timeout-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  const { runtimeRoot, port, environment, cleanup } = await createLocalFixture("publish-timeout", {
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "1500",
-  };
+  });
   const sourcePath = join(runtimeRoot, "slow.html");
   writeFileSync(sourcePath, Buffer.alloc(10 * 1024 * 1024, 0x61));
 
@@ -818,25 +783,13 @@ test("publish budgets a slow maximum-size publication before returning its commi
     assert.equal(retrieved.status, 200);
     assert.equal((await retrieved.arrayBuffer()).byteLength, 10 * 1024 * 1024);
   } finally {
-    spawnSync(process.execPath, [cli, "stop"], { encoding: "utf8", env: environment });
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("publish starts or reuses the daemon, serves raw immutable HTML, and records access after retrieval", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, port, executeInFixture, cleanup } =
+    await createLocalFixture("publish");
   const sourcePath = join(runtimeRoot, "source.html");
   const original = "<!doctype html><html><body><h1>snapshot one</h1></body></html>";
   writeFileSync(sourcePath, original);
@@ -906,25 +859,12 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     assert.equal(await firstAgain.text(), original);
   } finally {
     database?.close();
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("publish accepts a page folder and serves its root and assets", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-page-folder-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, port, executeInFixture, cleanup } = await createLocalFixture("page-folder");
   const site = join(runtimeRoot, "site");
   mkdirSync(join(site, "assets"), { recursive: true });
   writeFileSync(join(site, "index.html"), "<h1>folder home</h1>");
@@ -947,8 +887,7 @@ test("publish accepts a page folder and serves its root and assets", async () =>
     assert.equal(await stylesheet.text(), "body { color: blue; }");
     assert.equal(readFileSync(join(site, "index.html"), "utf8"), "<h1>folder home</h1>");
   } finally {
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
@@ -996,19 +935,8 @@ test("get accepts ids and exact local URLs but rejects ambiguous references befo
 });
 
 test("get streams exact bytes across daemon restart and only records successful access", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, environment, executeInFixture, cleanup } =
+    await createLocalFixture("get");
   const executeRawInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], {
       encoding: null,
@@ -1064,25 +992,13 @@ test("get streams exact bytes across daemon restart and only records successful 
     assert.match(missing.stderr.toString(), /was not found/);
   } finally {
     database?.close();
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("get honors stdout backpressure and records access after the slow consumer finishes", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-backpressure-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, environment, executeInFixture, cleanup } =
+    await createLocalFixture("get-backpressure");
   const sourcePath = join(runtimeRoot, "backpressure.html");
   const original = Buffer.concat([
     Buffer.from("<!doctype html><body>"),
@@ -1132,25 +1048,13 @@ test("get honors stdout backpressure and records access after the slow consumer 
       child.kill("SIGTERM");
       await waitForExit(child).catch(() => undefined);
     }
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("get aborts the daemon transfer on a closed stdout consumer without recording access", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-epipe-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, environment, executeInFixture, cleanup } =
+    await createLocalFixture("get-epipe");
   const sourcePath = join(runtimeRoot, "epipe.html");
   writeFileSync(
     sourcePath,
@@ -1197,8 +1101,7 @@ test("get aborts the daemon transfer on a closed stdout consumer without recordi
       child.kill("SIGTERM");
       await waitForExit(child).catch(() => undefined);
     }
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
@@ -1235,19 +1138,8 @@ test("start never stops an unknown owner of the daemon port", async () => {
 });
 
 test("clean uses the authenticated daemon policy and startup reconciliation", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-clean-cli-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, runtimeDir, port, executeInFixture, cleanup } =
+    await createLocalFixture("clean-cli");
   const sourcePath = join(runtimeRoot, "cleanup.html");
   writeFileSync(sourcePath, "cleanup me");
   let database: DatabaseSync | undefined;
@@ -1312,7 +1204,6 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
     assert.equal(descriptor.host, "127.0.0.1");
   } finally {
     database?.close();
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });

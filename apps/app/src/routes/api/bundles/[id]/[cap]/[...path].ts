@@ -1,13 +1,11 @@
-import type { Id } from "../../../../../../convex/_generated/dataModel";
+import { createBundleAssetHandler } from "~/lib/bundle-asset-handler";
 
 import { api, getUnauthedConvexClient } from "~/lib/convex-server";
-import { createBundleAssetHandler } from "~/lib/bundle-asset-handler";
-import { serverBundleReadCache, bundleCacheKey, readBoundedBundle } from "~/lib/bundle-read-cache";
-import { getDocumentStorage } from "~/lib/document-storage";
 import { requireMutationSecret } from "~/lib/document-mutation-proof";
 import { createMcpDocumentProof } from "~/lib/mcp-document-proof";
+import { loadStoredBundle } from "~/lib/stored-bundle";
+import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-const cache = serverBundleReadCache;
 export const GET = createBundleAssetHandler({
   secret: requireMutationSecret,
   getDocument: async ({ ownerId, documentId }) => {
@@ -19,14 +17,8 @@ export const GET = createBundleAssetHandler({
     return result?.document ?? null;
   },
   load: (claims) =>
-    cache.load(bundleCacheKey(claims.storageProvider, claims.storageKey), async () => {
-      const url = await getDocumentStorage(claims.storageProvider).getReadUrl(claims.storageKey);
-      return readBoundedBundle(
-        await fetch(url, {
-          credentials: "omit",
-          referrerPolicy: "no-referrer",
-          signal: AbortSignal.timeout(20_000),
-        })
-      );
+    loadStoredBundle(claims.storageProvider, claims.storageKey, {
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
     }),
 });

@@ -1,9 +1,9 @@
 import { bundleAssetResponse, bundleResponseHeaders } from "./bundle-asset-handler.ts";
 import {
+  type CloudBundle,
   cloudBundleContentType,
   cloudBundleMaxBytes,
   cloudBundleMime,
-  type CloudBundle,
 } from "./cloud-bundle.ts";
 
 export type SharedBundleDocument = {
@@ -16,7 +16,7 @@ export type SharedBundleDocument = {
 
 export function createSharedBundleAssetHandler(dependencies: {
   resolve(id: string, token: string): Promise<{ document: SharedBundleDocument } | null>;
-  load(document: SharedBundleDocument): Promise<CloudBundle>;
+  load(provider: string, key: string): Promise<CloudBundle>;
 }) {
   return async ({
     request,
@@ -44,7 +44,11 @@ export function createSharedBundleAssetHandler(dependencies: {
         document.sizeBytes > cloudBundleMaxBytes
       )
         return notFound();
-      return bundleAssetResponse(await dependencies.load(document), params.path, request);
+      return bundleAssetResponse(
+        await dependencies.load(document.storageProvider, document.storageKey),
+        params.path,
+        request
+      );
     } catch {
       return notFound();
     }
