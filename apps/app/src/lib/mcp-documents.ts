@@ -86,10 +86,17 @@ export function createMcpDocumentService(ownerId: string) {
       input.contentType,
       input.sizeBytes,
     ];
-    const uploadArguments = async (action: "reserve" | "create" | "abandon") => ({
+    const uploadArguments = async (
+      action: "reserve" | "create" | "abandon",
+      extraArguments: readonly number[] = []
+    ) => ({
       ownerId,
       ...input,
-      proof: await createMcpDocumentProof({ action, ownerId, arguments: arguments_ }),
+      proof: await createMcpDocumentProof({
+        action,
+        ownerId,
+        arguments: [...arguments_, ...extraArguments],
+      }),
       createProof: await createDocumentProof({ ownerId, ...input }),
     });
     const id = await uploadReservedDocument({
@@ -106,13 +113,8 @@ export function createMcpDocumentService(ownerId: string) {
       commit: async () => client.mutation(api.mcpDocuments.create, await uploadArguments("create")),
       abandon: async (uploadConfirmed) =>
         client.mutation(api.mcpDocuments.abandonUpload, {
-          ...(await uploadArguments("abandon")),
+          ...(await uploadArguments("abandon", [Number(uploadConfirmed)])),
           uploadConfirmed,
-          proof: await createMcpDocumentProof({
-            action: "abandon",
-            ownerId,
-            arguments: [...arguments_, Number(uploadConfirmed)],
-          }),
           outcomeProof: await createAbandonDocumentProof({ ownerId, ...input, uploadConfirmed }),
         }),
     });

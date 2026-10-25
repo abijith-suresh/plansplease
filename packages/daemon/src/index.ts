@@ -181,11 +181,6 @@ export class DaemonStartupBusyError extends Data.TaggedError("DaemonStartupBusyE
   readonly message: string;
 }> {}
 
-export class DaemonAlreadyRunningError extends Data.TaggedError("DaemonAlreadyRunningError")<{
-  readonly pid: number;
-  readonly message: string;
-}> {}
-
 export class DaemonPortInUseError extends Data.TaggedError("DaemonPortInUseError")<{
   readonly host: string;
   readonly port: number;
@@ -226,7 +221,6 @@ export class DaemonRequestError extends Data.TaggedError("DaemonRequestError")<{
 export type DaemonError =
   | DaemonPathError
   | DaemonStartupBusyError
-  | DaemonAlreadyRunningError
   | DaemonPortInUseError
   | DaemonDescriptorError
   | DaemonDescriptorEndpointMismatchError
@@ -1950,7 +1944,6 @@ const restartDaemonPromise = async (
 const isDaemonError = (cause: unknown): cause is DaemonError =>
   cause instanceof DaemonPathError ||
   cause instanceof DaemonStartupBusyError ||
-  cause instanceof DaemonAlreadyRunningError ||
   cause instanceof DaemonPortInUseError ||
   cause instanceof DaemonDescriptorError ||
   cause instanceof DaemonDescriptorEndpointMismatchError ||
@@ -2014,5 +2007,3 @@ export const stopDaemon = (config: DaemonConfig) =>
 
 export const restartDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
   daemonEffect(DAEMON_READY_PATH, (signal) => restartDaemonPromise(config, options, signal));
-
-export const runDaemonProcess = (config: DaemonConfig = resolveDaemonConfig()) => runDaemon(config);

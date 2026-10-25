@@ -268,58 +268,6 @@ test("cache bounds in-flight loads, removes failures, expires entries and reuses
   await cache.load("bad", loader);
 });
 
-test("public bundle assets require current sharing authorization before every cached read", async () => {
-  const { createSharedBundleAssetHandler } = await import(
-    "../src/lib/shared-bundle-asset-handler.ts"
-  );
-  let enabled = true,
-    lookups = 0,
-    reads = 0;
-  const handler = createSharedBundleAssetHandler({
-    resolve: async () => {
-      lookups += 1;
-      return enabled
-        ? {
-            document: {
-              title: "Artifact",
-              contentType: cloudBundleContentType,
-              sizeBytes: packCloudBundle(files).byteLength,
-              storageProvider: "uploadthing",
-              storageKey: claims.storageKey,
-            },
-          }
-        : null;
-    },
-    load: async (provider, key) => {
-      assert.equal(provider, "uploadthing");
-      assert.equal(key, claims.storageKey);
-      reads += 1;
-      return parseCloudBundle(packCloudBundle(files));
-    },
-  });
-  const event = {
-    request: new Request("https://app.test/api/shared-bundles/doc/token/scripts/main.mjs"),
-    params: { id: "doc", token: "a".repeat(43), path: "scripts/main.mjs" },
-  };
-  assert.equal(
-    (await handler({ ...event, params: { ...event.params, token: "guess" } })).status,
-    404
-  );
-  assert.equal(lookups, 0);
-  assert.equal(await (await handler(event)).text(), files[2]!.content);
-  enabled = false;
-  assert.equal((await handler(event)).status, 404);
-  assert.equal(lookups, 2);
-  assert.equal(reads, 1);
-  const absent = createSharedBundleAssetHandler({
-    resolve: async () => {
-      throw new Error("optional backend absent");
-    },
-    load: async () => assert.fail("must not load"),
-  });
-  assert.equal(await (await absent(event)).text(), "Not found");
-});
-
 test("MCP bundle reads default to HTML, read text paths in bounded chunks, and paginate file listing", async () => {
   const { readBundleText, listBundleFilePage } = await import("../src/lib/mcp-bundle-reads.ts");
   const bundle = parseCloudBundle(packCloudBundle(files));

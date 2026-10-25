@@ -1,16 +1,11 @@
-import {
-  parseDocumentReference,
-  type LocalApplication,
-  type LocalDaemonStatus,
-} from "@planview/local";
+import { isValidDocumentId } from "@planview/core";
+import type { LocalApplication, LocalDaemonStatus } from "@planview/local";
 import { Effect } from "effect";
 import { parseOptions } from "../arguments.js";
 import { formatHelp, type Command, type HelpTopic } from "../help.js";
 import {
   DaemonCommandError,
   GetCommandError,
-  OpenBrowserCommandError,
-  OutputCommandError,
   PublishCommandError,
   cleanupResultForJson,
   describe,
@@ -33,24 +28,6 @@ const writeHelp = (stdout: StdoutWriter, topic?: HelpTopic) =>
 const formatRunning = (status: Extract<LocalDaemonStatus, { readonly state: "running" }>) =>
   `plansplease daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
-const publishFailure = (sourcePath: string, cause: unknown) =>
-  new PublishCommandError({
-    sourcePath,
-    cause,
-    message: `Could not publish ${sourcePath}: ${describe(cause)}`,
-  });
-
-const publishSource = (application: LocalApplication, sourcePath: string) =>
-  application
-    .publish(sourcePath)
-    .pipe(Effect.mapError((cause) => publishFailure(sourcePath, cause)));
-
-const openPublishedUrl = (sourcePath: string, url: string, openUrl: OpenUrl) =>
-  Effect.tryPromise({
-    try: () => openUrl(url),
-    catch: (cause) => openBrowserFailure(sourcePath, url, cause),
-  });
-
 const runPublishCommand = (
   application: LocalApplication,
   sourcePath: string,
@@ -59,33 +36,32 @@ const runPublishCommand = (
   stdout: StdoutWriter,
   openUrl: OpenUrl
 ) =>
-  publishSource(application, sourcePath).pipe(
-    Effect.flatMap((published) =>
-      writeCommandResult(stdout, format, published, ({ url }) => `${url}\n`).pipe(
-        Effect.flatMap(() =>
-          open ? openPublishedUrl(sourcePath, published.url, openUrl) : Effect.succeed(undefined)
-        ),
-        Effect.map(() => 0)
-      )
-    ),
-    Effect.mapError((cause) =>
-      cause instanceof OutputCommandError ||
-      cause instanceof PublishCommandError ||
-      cause instanceof OpenBrowserCommandError
-        ? cause
-        : new PublishCommandError({
+  Effect.gen(function* () {
+    const published = yield* application.publish(sourcePath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new PublishCommandError({
             sourcePath,
             cause,
             message: `Could not publish ${sourcePath}: ${describe(cause)}`,
           })
-    )
-  );
+      )
+    );
+    yield* writeCommandResult(stdout, format, published, ({ url }) => `${url}\n`);
+    if (open) {
+      yield* Effect.tryPromise({
+        try: () => openUrl(published.url),
+        catch: (cause) => openBrowserFailure(sourcePath, published.url, cause),
+      });
+    }
+    return 0;
+  });
 
 const runGetCommand = (application: LocalApplication, reference: string, stdout: StdoutWriter) =>
   application
     .get({
       reference,
-      onChunk: (chunk) => stdout(chunk),
+      onChunk: stdout,
     })
     .pipe(
       Effect.map(() => 0),
@@ -191,18 +167,7 @@ export const runDocumentCommand = (
   parseOptions(args, {
     allowJson: commandName === "publish",
     allowOpen: commandName === "publish",
-    ...(commandName === "get"
-      ? {
-          allowLeadingHyphenOperand: (argument: string) => {
-            try {
-              parseDocumentReference(argument);
-              return true;
-            } catch {
-              return false;
-            }
-          },
-        }
-      : {}),
+    allowLeadingHyphenOperand: (argument) => commandName === "get" && isValidDocumentId(argument),
     helpTopic: commandName,
   }).pipe(
     Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
