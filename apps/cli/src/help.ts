@@ -39,7 +39,7 @@ Profile names use lowercase letters, numbers, hyphens, and underscores.
 Use plansplease <command> --help for command options.
 
 Install the bundled Agent Skills with the Vercel Skills CLI:
-  npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
+  npx skills add https://github.com/abijith-suresh/plansplease/tree/main/apps/cli/skills
   npx skills add ./apps/cli/skills              (from a local checkout)
 Skills CLI installs to the project by default; add -g for optional user-wide installation.
 `;

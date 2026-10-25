@@ -9,8 +9,8 @@ account workspace. The package is not published to npm yet.
 Use Node.js 24.19.0 and npm 11.16.0:
 
 ```sh
-git clone https://github.com/abijith-suresh/planview.git
-cd planview
+git clone https://github.com/abijith-suresh/plansplease.git
+cd plansplease
 npm ci
 npm pack --workspace @abijith-suresh/planview --pack-destination .
 ```
@@ -142,10 +142,10 @@ The package includes `planview` and `create-html` skills. Install them into your
 project with the [Vercel Skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
+npx skills add https://github.com/abijith-suresh/plansplease/tree/main/apps/cli/skills
 ```
 
-From a Planview checkout, use `npx skills add ./apps/cli/skills`. Add `-g` for
+From a plansplease checkout, use `npx skills add ./apps/cli/skills`. Add `-g` for
 user-wide installation, `-a codex` to select Codex, and `-y` to skip prompts.
 Rerun the command to replace existing copies.
 

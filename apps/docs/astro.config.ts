@@ -100,7 +100,7 @@ export default defineConfig({
         ThemeSelect: "./src/components/Empty.astro",
         MobileMenuFooter: "./src/components/Empty.astro",
       },
-      editLink: { baseUrl: "https://github.com/abijith-suresh/planview/edit/main/apps/docs/" },
+      editLink: { baseUrl: "https://github.com/abijith-suresh/plansplease/edit/main/apps/docs/" },
       sidebar: [
         { label: "Get started", slug: "index" },
         {
