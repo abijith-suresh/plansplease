@@ -22,9 +22,8 @@ export const TEST_PUBLISH_PAUSE_ONCE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_O
 export const TEST_UNCOOPERATIVE_PUBLISH_ENV = "PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH";
 export const TEST_CLEANUP_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS";
 
-// These values are runtime plumbing, not application configuration. Keep the
-// allowlist narrow so detached daemons do not inherit tokens or Node flags,
-// while retaining the platform variables needed by Node and native tooling.
+// Detached daemons inherit platform variables needed by Node and native tools,
+// but not credentials or Node flags.
 const SAFE_RUNTIME_ENVIRONMENT_KEYS = [
   "PATH",
   "HOME",

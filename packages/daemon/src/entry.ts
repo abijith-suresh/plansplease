@@ -1,4 +1,4 @@
-import { resolveDaemonConfig, resolveDaemonConfigForTest, runDaemonProcess } from "./index.js";
+import { resolveDaemonConfig, resolveDaemonConfigForTest, runDaemon } from "./index.js";
 import { Effect } from "effect";
 
 try {
@@ -8,7 +8,7 @@ try {
     testPort === undefined
       ? resolveDaemonConfig()
       : resolveDaemonConfigForTest({ port: Number(testPort) });
-  await Effect.runPromise(runDaemonProcess(config));
+  await Effect.runPromise(runDaemon(config));
 } catch (cause) {
   process.stderr.write(
     `Planview daemon failed: ${cause instanceof Error ? cause.message : String(cause)}\n`

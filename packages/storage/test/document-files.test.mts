@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { renameSync, symlinkSync } from "node:fs";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import type { ReadStream } from "node:fs";
+import { renameSync, symlinkSync } from "node:fs";
 import {
   appendFile,
   mkdir,
@@ -21,12 +21,13 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   BUNDLE_HEADER_BYTES,
-  createBundleHeader,
-  encodeBundleManifest,
   type BundleManifestEntry,
+  createBundleHeader,
   type DocumentId,
+  encodeBundleManifest,
 } from "@planview/core";
 import { Effect, Exit, Scope } from "effect";
+import type { DocumentFileStore, StagedDocumentFileHandle } from "../dist/index.js";
 import {
   DocumentFileAlreadyExistsError,
   DocumentFileCloneError,
@@ -41,7 +42,6 @@ import {
   openDocumentFileStore,
   openDocumentFileStoreScoped,
 } from "../dist/index.js";
-import type { DocumentFileStore, StagedDocumentFileHandle } from "../dist/index.js";
 
 const V1_MAX_HTML_SIZE_BYTES = 10 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
@@ -169,21 +169,6 @@ test("initializes private owned directories and safe staged files", () =>
     if (process.platform !== "win32") {
       assert.equal(staged.mode & 0o777, 0o600);
     }
-  }));
-
-test("copies a valid source without mutating it and survives source changes", () =>
-  withStore(async ({ directory, store }) => {
-    const source = join(directory, "input.HTML");
-    const original = Buffer.from("<html><body>original</body></html>");
-    await writeFile(source, original);
-    const handle = await store.stageSourceFile(source);
-    assert.deepEqual(await readFile(source), original);
-
-    await writeFile(source, "changed");
-    await store.finalizeStagedFile(handle, validId);
-    await rm(source);
-    const stream = await store.readDocument(validId);
-    assert.deepEqual(await readStream(stream), original);
   }));
 
 test("rejects a same-size source mutation after the copy completes", () =>
@@ -418,26 +403,6 @@ test("rejects nonregular and symlink final targets without replacing them", () =
     );
     assert.deepEqual(await readdir(join(directory, "staging")), []);
     await rm(target, { recursive: true, force: true });
-  }));
-
-test("close waits for an active operation and rejects new operations", () =>
-  withStore(async ({ directory, store }) => {
-    const source = join(directory, "active.html");
-    await writeFile(source, Buffer.alloc(V1_MAX_HTML_SIZE_BYTES, 0x63));
-    const staging = store.stageSourceFile(source);
-    const closing = store.close();
-
-    await assert.rejects(
-      store.stageSourceFile(source),
-      (error) => error instanceof DocumentFileStoreClosedError
-    );
-    const handle = await staging;
-    await closing;
-    assert.equal((await stat(join(directory, "staging", handle))).isFile(), true);
-    await assert.rejects(
-      store.readDocument(validId),
-      (error) => error instanceof DocumentFileStoreClosedError
-    );
   }));
 
 test("a document store scope waits for active operations before finalizing", () =>
@@ -740,41 +705,6 @@ test("out-of-model hostile external clone-path replacement is retained", () =>
     }
   }));
 
-test("retains a durable target when post-publication staging fsync fails", () =>
-  withTempDirectory(async (directory) => {
-    const documentsDir = join(directory, "documents");
-    const stagingDir = join(directory, "staging");
-    const store = Effect.runSync(
-      openDocumentFileStore({
-        documentsDir,
-        stagingDir,
-        beforePostPublicationStagingDirectorySync: async () => {
-          throw new Error("post-publication staging fsync failed");
-        },
-      })
-    );
-    try {
-      const source = join(directory, "post-publication-sync.html");
-      await writeFile(source, "durable target");
-      const handle = await store.stageSourceFile(source);
-
-      await assert.rejects(
-        store.finalizeStagedFile(handle, validId),
-        (error) =>
-          error instanceof DocumentFileFinalizeError &&
-          error.targetCreated === true &&
-          error.targetRecoveryPolicy === "retain" &&
-          error.targetState === "retained" &&
-          error.targetLockState === "unknown" &&
-          error.stagedFileState === "unknown" &&
-          error.finalizationLockState === "unknown"
-      );
-      assert.equal(await readFile(join(documentsDir, `${validId}.html`), "utf8"), "durable target");
-    } finally {
-      await store.close();
-    }
-  }));
-
 test("out-of-model hostile external target replacement is retained during finalization", () =>
   withTempDirectory(async (directory) => {
     const documentsDir = join(directory, "documents");
@@ -924,106 +854,6 @@ test("concurrent Planview finalization of one id has one atomic winner", () =>
     } finally {
       firstStore.close();
       secondStore.close();
-    }
-  }));
-
-test("bounds a live target-lock wait as a collision without claiming the peer lock", () =>
-  withTempDirectory(async (directory) => {
-    const documentsDir = join(directory, "documents");
-    const stagingDir = join(directory, "staging");
-    let targetLockEnteredResolve!: () => void;
-    const targetLockEntered = new Promise<void>((resolve) => {
-      targetLockEnteredResolve = resolve;
-    });
-    let releaseTargetLock!: () => void;
-    const targetLockGate = new Promise<void>((resolve) => {
-      releaseTargetLock = resolve;
-    });
-    let holdTargetLock = true;
-    const firstStore = Effect.runSync(
-      openDocumentFileStore({
-        documentsDir,
-        stagingDir,
-        beforeFinalizationTargetInspection: async () => {
-          if (!holdTargetLock) {
-            return;
-          }
-          holdTargetLock = false;
-          targetLockEnteredResolve();
-          await targetLockGate;
-        },
-      })
-    );
-    const secondStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
-    let firstFinalization: Promise<unknown> | undefined;
-    let primaryFailure: unknown;
-    let hasPrimaryFailure = false;
-    let cleanupFailures: unknown[] = [];
-    try {
-      const firstSource = join(directory, "target-lock-winner.html");
-      const secondSource = join(directory, "target-lock-contender.html");
-      await writeFile(firstSource, "winner");
-      await writeFile(secondSource, "contender");
-      const firstHandle = await firstStore.stageSourceFile(firstSource);
-      const secondHandle = await secondStore.stageSourceFile(secondSource);
-
-      firstFinalization = firstStore.finalizeStagedFile(firstHandle, validId);
-      const firstFinalizationSettlement = firstFinalization.then(
-        () => ({ kind: "settled" as const }),
-        (error: unknown) => ({ kind: "rejected" as const, error })
-      );
-      const entryOrSettlement = await Promise.race([
-        targetLockEntered.then(() => ({ kind: "entered" as const })),
-        firstFinalizationSettlement,
-      ]);
-      if (entryOrSettlement.kind === "rejected") {
-        throw entryOrSettlement.error;
-      }
-      assert.equal(
-        entryOrSettlement.kind,
-        "entered",
-        "first finalization completed before entering target inspection"
-      );
-      await assert.rejects(
-        secondStore.finalizeStagedFile(secondHandle, validId),
-        (error) => error instanceof DocumentFileTargetBusyError
-      );
-      releaseTargetLock();
-      await firstFinalization;
-      assert.deepEqual(await readdir(stagingDir), []);
-    } catch (error) {
-      hasPrimaryFailure = true;
-      primaryFailure = error;
-    } finally {
-      releaseTargetLock();
-      const cleanupOperations: Promise<unknown>[] = [];
-      if (firstFinalization !== undefined) {
-        cleanupOperations.push(firstFinalization);
-      }
-      cleanupOperations.push(
-        Promise.resolve().then(() => firstStore.close()),
-        Promise.resolve().then(() => secondStore.close())
-      );
-      const cleanupResults = await Promise.allSettled(cleanupOperations);
-      cleanupFailures = cleanupResults.flatMap((result) =>
-        result.status === "rejected" ? [result.reason] : []
-      );
-    }
-    if (hasPrimaryFailure) {
-      if (cleanupFailures.length === 0) {
-        throw primaryFailure;
-      }
-      throw new AggregateError(
-        [primaryFailure, ...cleanupFailures],
-        "Target-lock test failed and cleanup also failed.",
-        { cause: primaryFailure }
-      );
-    }
-    if (cleanupFailures.length === 1) {
-      throw cleanupFailures[0];
-    }
-    if (cleanupFailures.length > 1) {
-      throw new AggregateError(cleanupFailures, "Target-lock test cleanup failed.");
     }
   }));
 

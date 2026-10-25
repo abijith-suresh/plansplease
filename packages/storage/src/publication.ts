@@ -36,7 +36,6 @@ import {
   type DocumentPublicationOrphanState,
   type DocumentPublicationRecovery,
   type DocumentPublicationResourceState,
-  type DocumentPublicationResult,
 } from "./publication-contracts.js";
 import { createMetadataGatedDocumentReader } from "./publication-reader.js";
 
@@ -240,14 +239,12 @@ export const createDocumentPublicationCoordinator = (
 
   const publishPromise = async (sourcePath: string, signal?: AbortSignal) => {
     signal?.throwIfAborted();
-    // This map is intentionally created per call. A coordinator can be reused
-    // and concurrent calls must never compensate one another's handles.
+    // Track handles per call so concurrent publications cannot compensate
+    // one another's resources.
     const ownedHandles = new Map<string, OwnedHandleState>();
     const targetLockStates = new Map<string, DocumentFileResourceState>();
-    // A non-typed adapter fault can occur after it creates a resource but
-    // before it can return that resource's handle. Keep anonymous unknown
-    // entries so recovery does not imply that the adapter's private pathname
-    // space is empty.
+    // An adapter can create a resource and throw before returning its handle.
+    // Count those unknown resources so recovery reports them.
     let possibleUnidentifiedStagedFiles = 0;
     let possibleUnidentifiedFinalizationLocks = 0;
     let snapshotHandle: StagedDocumentFileHandle | undefined;
@@ -492,6 +489,81 @@ export const createDocumentPublicationCoordinator = (
       }
     };
 
+    // Returns only when compensation proved that another id can be tried.
+    const recoverMetadataCommitFailure = async ({
+      id,
+      attemptHandle,
+      attempt,
+      targetState,
+      targetCapability,
+      cause,
+    }: {
+      readonly id: DocumentId;
+      readonly attemptHandle: StagedDocumentFileHandle;
+      readonly attempt: number;
+      readonly targetState: DocumentFileResourceState;
+      readonly targetCapability: DocumentFileTargetCapability | undefined;
+      readonly cause: unknown;
+    }) => {
+      let uniquenessCollision = false;
+      try {
+        uniquenessCollision = isMetadataUniquenessCollision(cause);
+      } catch (classifierCause) {
+        const observation = observeMetadata(id);
+        const metadataState: MetadataObservation =
+          observation.status === "absent" ? "absent" : "unknown";
+        const observedCause = observation.cause;
+        await compensate(id, {
+          targetState,
+          ...(targetCapability === undefined ? {} : { targetCapability }),
+          targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
+          metadataState,
+          cause:
+            observedCause === undefined
+              ? classifierCause
+              : new AggregateError([classifierCause, observedCause]),
+        });
+        throw makePublicationError({ sourcePath, id, cause: classifierCause });
+      }
+
+      // A row after an insert error is not proof that this invocation inserted
+      // it. Retain an occupied or unreadable pair as an orphan.
+      const observation = observeMetadata(id);
+      const metadataState: MetadataObservation =
+        observation.status === "absent" ? "absent" : "unknown";
+      const targetRecoveryPolicy = metadataState === "absent" ? "delete" : "retain";
+      if (uniquenessCollision && metadataState === "absent") {
+        await compensate(id, {
+          targetState,
+          ...(targetCapability === undefined ? {} : { targetCapability }),
+          targetRecoveryPolicy,
+          metadataState,
+          cause,
+          handles: new Set([attemptHandle]),
+        });
+        if (attempt < maxAttempts) {
+          return;
+        }
+        await compensateWithoutId(cause);
+        throw new DocumentPublicationRetryLimitError({
+          sourcePath,
+          attempts: attempt,
+          cause,
+          message: `Could not publish document from ${sourcePath}: exhausted ${maxAttempts} attempts after metadata uniqueness collisions.`,
+        });
+      }
+
+      const observedCause = observation.cause;
+      await compensate(id, {
+        targetState,
+        ...(targetCapability === undefined ? {} : { targetCapability }),
+        targetRecoveryPolicy,
+        metadataState,
+        cause: observedCause === undefined ? cause : new AggregateError([cause, observedCause]),
+      });
+      throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
+    };
+
     const compensateAfterSuccessfulMetadata = async ({
       id,
       targetCapability,
@@ -718,75 +790,18 @@ export const createDocumentPublicationCoordinator = (
 
           if (cause instanceof DocumentFileFinalizeError && cause.targetCommitAttempted) {
             const commitCause = targetCommitCause ?? cause.cause;
-            let uniquenessCollision = false;
-            try {
-              uniquenessCollision = isMetadataUniquenessCollision(commitCause);
-            } catch (classifierCause) {
-              const observation = observeMetadata(id);
-              const metadataState: MetadataObservation =
-                observation.status === "absent" ? "absent" : "unknown";
-              const observedCause = observation.cause;
-              await compensate(id, {
-                targetState,
-                ...(targetCapability === undefined ? {} : { targetCapability }),
-                targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
-                metadataState,
-                cause:
-                  observedCause === undefined
-                    ? classifierCause
-                    : new AggregateError([classifierCause, observedCause]),
-              });
-              throw makePublicationError({ sourcePath, id, cause: classifierCause });
-            }
-
-            const observation = observeMetadata(id);
-            // The target lock prevented a cooperating cleanup from deleting
-            // the target while this callback ran. A row after an insert error
-            // is still not proof that this invocation inserted it, so retain
-            // an occupied or unreadable pair as an orphan.
-            const metadataState: MetadataObservation =
-              observation.status === "absent" ? "absent" : "unknown";
-            const recoveryPolicy: DocumentFileTargetRecoveryPolicy =
-              metadataState === "absent" ? "delete" : "retain";
-            if (uniquenessCollision && metadataState === "absent") {
-              await compensate(id, {
-                targetState,
-                ...(targetCapability === undefined ? {} : { targetCapability }),
-                targetRecoveryPolicy: recoveryPolicy,
-                metadataState,
-                cause: commitCause,
-                handles: new Set([attemptHandle]),
-              });
-              lastRetryCause = commitCause;
-              if (attempt < maxAttempts) {
-                continue;
-              }
-              await compensateWithoutId(commitCause);
-              throw new DocumentPublicationRetryLimitError({
-                sourcePath,
-                attempts: attempt,
-                cause: commitCause,
-                message: `Could not publish document from ${sourcePath}: exhausted ${maxAttempts} attempts after metadata uniqueness collisions.`,
-              });
-            }
-
-            const observedCause = observation.cause;
-            await compensate(id, {
-              targetState,
-              ...(targetCapability === undefined ? {} : { targetCapability }),
-              targetRecoveryPolicy: recoveryPolicy,
-              metadataState,
-              cause:
-                observedCause === undefined
-                  ? commitCause
-                  : new AggregateError([commitCause, observedCause]),
-            });
-            throw makePublicationError({
-              sourcePath,
+            // The file store held the target lock through the failed callback.
+            // Recovery still needs a metadata observation before deleting it.
+            await recoverMetadataCommitFailure({
               id,
-              handle: attemptHandle,
+              attemptHandle,
+              attempt,
+              targetState,
+              targetCapability,
               cause: commitCause,
             });
+            lastRetryCause = commitCause;
+            continue;
           }
 
           if (isDocumentFileCollision(cause) && targetState === "absent") {
@@ -838,62 +853,16 @@ export const createDocumentPublicationCoordinator = (
             metadataStore.insertDocumentMetadata(candidate);
             metadata = candidate;
           } catch (cause) {
-            let uniquenessCollision = false;
-            try {
-              uniquenessCollision = isMetadataUniquenessCollision(cause);
-            } catch (classifierCause) {
-              const observation = observeMetadata(id);
-              const metadataState: MetadataObservation =
-                observation.status === "absent" ? "absent" : "unknown";
-              const observedCause = observation.cause;
-              await compensate(id, {
-                targetState: "retained",
-                targetCapability,
-                targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
-                metadataState,
-                cause:
-                  observedCause === undefined
-                    ? classifierCause
-                    : new AggregateError([classifierCause, observedCause]),
-              });
-              throw makePublicationError({ sourcePath, id, cause: classifierCause });
-            }
-
-            const observation = observeMetadata(id);
-            const metadataState: MetadataObservation =
-              observation.status === "absent" ? "absent" : "unknown";
-            if (uniquenessCollision && metadataState === "absent") {
-              await compensate(id, {
-                targetState: "retained",
-                targetCapability,
-                targetRecoveryPolicy: "delete",
-                metadataState,
-                cause,
-                handles: new Set([attemptHandle]),
-              });
-              lastRetryCause = cause;
-              if (attempt < maxAttempts) {
-                continue;
-              }
-              await compensateWithoutId(cause);
-              throw new DocumentPublicationRetryLimitError({
-                sourcePath,
-                attempts: attempt,
-                cause,
-                message: `Could not publish document from ${sourcePath}: exhausted ${maxAttempts} attempts after metadata uniqueness collisions.`,
-              });
-            }
-
-            const observedCause = observation.cause;
-            await compensate(id, {
+            await recoverMetadataCommitFailure({
+              id,
+              attemptHandle,
+              attempt,
               targetState: "retained",
               targetCapability,
-              targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
-              metadataState,
-              cause:
-                observedCause === undefined ? cause : new AggregateError([cause, observedCause]),
+              cause,
             });
-            throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
+            lastRetryCause = cause;
+            continue;
           }
         }
 
@@ -945,9 +914,7 @@ export const createDocumentPublicationCoordinator = (
       ) {
         throw cause;
       }
-      // The outer guard is intentionally narrow: every owned handle remains
-      // invocation-local, and unexpected adapter errors still get one bounded
-      // compensation attempt rather than cleaning another publish's state.
+      // Unexpected adapter errors get one compensation attempt for this call.
       await compensateWithoutId(cause);
       throw makePublicationError({ sourcePath, cause });
     }

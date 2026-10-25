@@ -25,10 +25,7 @@ export const createDocumentReadAdmission = ({
   maxQueuedReads,
   queueTimeoutMs,
 }: DocumentReadAdmissionOptions) => {
-  const active = new Set<{
-    readonly controller: AbortController;
-    released: boolean;
-  }>();
+  const active = new Set<AbortController>();
   const queued: Array<{
     readonly resolve: (permit: DocumentReadPermit) => void;
     readonly reject: (cause: unknown) => void;
@@ -52,17 +49,14 @@ export const createDocumentReadAdmission = ({
   };
 
   const makePermit = () => {
-    const state = { controller: new AbortController(), released: false };
-    active.add(state);
+    const controller = new AbortController();
+    active.add(controller);
     return {
-      signal: state.controller.signal,
+      signal: controller.signal,
       release: () => {
-        if (state.released) {
-          return;
+        if (active.delete(controller)) {
+          drain();
         }
-        state.released = true;
-        active.delete(state);
-        drain();
       },
     } satisfies DocumentReadPermit;
   };
@@ -129,8 +123,8 @@ export const createDocumentReadAdmission = ({
       }
       queuedRead.reject(new DocumentReadAdmissionError("closed"));
     }
-    for (const state of active) {
-      state.controller.abort(new Error("The daemon is shutting down."));
+    for (const controller of active) {
+      controller.abort(new Error("The daemon is shutting down."));
     }
   };
 

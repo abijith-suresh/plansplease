@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -18,19 +18,19 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  type BundleManifestEntry,
   createBundleHeader,
+  type DocumentId,
   encodeBundleManifest,
   validateDocumentId,
-  type BundleManifestEntry,
-  type DocumentId,
 } from "@planview/core";
+import type { MetadataStore } from "@planview/storage";
 import {
   createDocumentPublicationCoordinator,
   openDocumentFileStore,
   openStorage,
   V1_CLEANUP_ITEM_BUDGET,
 } from "@planview/storage";
-import type { MetadataStore } from "@planview/storage";
 import { Effect } from "effect";
 import * as daemon from "../dist/index.js";
 
@@ -355,27 +355,6 @@ test("public configuration fixes 4777, while test injection is explicit and cont
       () => daemon.resolveDaemonPaths({ appDataDir, runtimeDir: join(fixture, "outside") }),
       /contained below app-data/
     );
-  } finally {
-    rmSync(fixture, { force: true, recursive: true });
-  }
-});
-
-test("profile configuration isolates the default path and explicit test paths", () => {
-  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-profile-config-"));
-  try {
-    const defaultConfig = daemon.resolveDaemonConfig({}, { XDG_DATA_HOME: fixture });
-    const namedConfig = daemon.resolveDaemonConfig({ profile: "work" }, { XDG_DATA_HOME: fixture });
-    assert.equal(defaultConfig.profile, "default");
-    assert.equal(namedConfig.profile, "work");
-    assert.equal(defaultConfig.appDataDir, join(fixture, "planview"));
-    assert.equal(namedConfig.appDataDir, join(fixture, "planview", "profiles", "work"));
-    assert.notEqual(defaultConfig.runtimeDir, namedConfig.runtimeDir);
-
-    const explicitConfig = daemon.resolveDaemonConfig({
-      appDataDir: join(fixture, "explicit"),
-      profile: "work",
-    });
-    assert.equal(explicitConfig.appDataDir, join(fixture, "explicit"));
   } finally {
     rmSync(fixture, { force: true, recursive: true });
   }

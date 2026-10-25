@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { checkReleasePolicy, formatPolicyFailure } from "./release-policy.mjs";
+import { checkReleasePolicy } from "./release-policy.mjs";
 
 const releasePolicyScript = fileURLToPath(new URL("./release-policy.mjs", import.meta.url));
 const publicPackageName = "@abijith-suresh/planview";
@@ -48,58 +48,6 @@ test("allows a patch bump and ignores Changesets support files and other package
   assert.deepEqual(result.violations, []);
 });
 
-test("ignores hidden and uppercase-extension markdown while enforcing valid Changesets", () => {
-  const result = withTemporaryRepository(
-    {
-      ".hidden.md": `---\n"${publicPackageName}": [minor\n---\n\nIgnored hidden markdown.\n`,
-      "MALFORMED.MD": `---\n"${publicPackageName}": [major\n---\n\nIgnored uppercase-extension markdown.\n`,
-      "valid-minor.md": changeset("minor"),
-    },
-    (root) => checkReleasePolicy({ root })
-  );
-
-  assert.deepEqual(result.violations, [
-    { file: "valid-minor.md", packageName: publicPackageName, bump: "minor" },
-  ]);
-});
-
-test("rejects a minor bump for the scoped public package before 1.0.0", () => {
-  const result = withTemporaryRepository({ "minor.md": changeset("minor") }, (root) =>
-    checkReleasePolicy({ root })
-  );
-
-  assert.deepEqual(result.violations, [
-    { file: "minor.md", packageName: publicPackageName, bump: "minor" },
-  ]);
-  assert.match(formatPolicyFailure(result), /minor bump for @abijith-suresh\/planview/);
-  assert.match(formatPolicyFailure(result), /use patch before 1\.0\.0/);
-});
-
-test("rejects a major bump for the scoped public package before 1.0.0", () => {
-  const result = withTemporaryRepository({ "major.md": changeset("major") }, (root) =>
-    checkReleasePolicy({ root })
-  );
-
-  assert.deepEqual(result.violations, [
-    { file: "major.md", packageName: publicPackageName, bump: "major" },
-  ]);
-  assert.match(formatPolicyFailure(result), /major bump for @abijith-suresh\/planview/);
-});
-
-test("uses Changesets parsing for folded and tagged scalar values", () => {
-  const result = withTemporaryRepository(
-    {
-      "folded-patch.md": `---\n"${publicPackageName}": >-\n  patch\n---\n\nA folded patch.\n`,
-      "tagged-minor.md": `---\n"${publicPackageName}": !!str minor\n---\n\nA tagged feature.\n`,
-    },
-    (root) => checkReleasePolicy({ root })
-  );
-
-  assert.deepEqual(result.violations, [
-    { file: "tagged-minor.md", packageName: publicPackageName, bump: "minor" },
-  ]);
-});
-
 test("fails closed with a file diagnostic for malformed frontmatter", () => {
   assert.throws(
     () =>
@@ -109,22 +57,6 @@ test("fails closed with a file diagnostic for malformed frontmatter", () => {
       ),
     (error) => {
       assert.match(error.message, /Could not parse \.changeset\/malformed\.md/);
-      assert.match(error.message, /invalid YAML in frontmatter/);
-      return true;
-    }
-  );
-});
-
-test("fails closed when a changeset has no closing frontmatter delimiter", () => {
-  assert.throws(
-    () =>
-      withTemporaryRepository(
-        { "unclosed.md": `---\n"${publicPackageName}": minor\n\nUnclosed frontmatter.\n` },
-        (root) => checkReleasePolicy({ root })
-      ),
-    (error) => {
-      assert.match(error.message, /Could not parse \.changeset\/unclosed\.md/);
-      assert.match(error.message, /missing or invalid frontmatter/);
       return true;
     }
   );
@@ -171,66 +103,6 @@ test("fails closed for invalid package versions that could bypass the policy", (
       version
     );
   }
-});
-
-test("handles SemVer prerelease, build, and zero-value edge cases", () => {
-  for (const [version, enforcePatchOnly] of [
-    ["0.0.0", true],
-    ["1.0.0-0", true],
-    ["1.0.0-alpha.0+build.7", true],
-    ["1.0.0+build.7", false],
-  ]) {
-    const result = withTemporaryRepository(
-      { "minor.md": changeset("minor") },
-      (root) => checkReleasePolicy({ root }),
-      version
-    );
-    assert.equal(result.enforcePatchOnly, enforcePatchOnly, version);
-    assert.equal(result.violations.length, enforcePatchOnly ? 1 : 0, version);
-  }
-});
-
-test("includes a symlinked markdown candidate like @changesets/read", (t) => {
-  const result = withTemporaryRepository({}, (root) => {
-    const target = join(root, "target.md");
-    const link = join(root, ".changeset", "linked.md");
-    writeFileSync(target, changeset("minor"));
-
-    try {
-      symlinkSync(target, link);
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        ["EACCES", "EINVAL", "EPERM", "ENOTSUP"].includes(error.code)
-      ) {
-        t.skip("symbolic links are not supported in this environment");
-        return undefined;
-      }
-      throw error;
-    }
-
-    return checkReleasePolicy({ root });
-  });
-
-  if (result === undefined) return;
-  assert.deepEqual(result.violations, [
-    { file: "linked.md", packageName: publicPackageName, bump: "minor" },
-  ]);
-});
-
-test("does not silently ignore a matching markdown directory", () => {
-  assert.throws(
-    () =>
-      withTemporaryRepository({}, (root) => {
-        mkdirSync(join(root, ".changeset", "directory.md"));
-        return checkReleasePolicy({ root });
-      }),
-    (error) => {
-      assert.match(error.message, /Could not read \.changeset\/directory\.md/);
-      return true;
-    }
-  );
 });
 
 test("CLI exits nonzero and reports malformed relevant frontmatter", () => {

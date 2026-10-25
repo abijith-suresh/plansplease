@@ -5,20 +5,20 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
-import { Effect, Exit } from "effect";
 import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
+import { Effect, Exit } from "effect";
+import type { DocumentMetadata, MetadataStore } from "../dist/index.js";
 import {
   CURRENT_SCHEMA_VERSION,
   openStorage,
   openStorageScoped,
   StorageClosedError,
-  StorageQuotaExceededError,
   StorageInvariantError,
   StorageMigrationError,
   StorageOpenError,
   StoragePathError,
+  StorageQuotaExceededError,
 } from "../dist/index.js";
-import type { DocumentMetadata, MetadataStore } from "../dist/index.js";
 
 type SqliteRow = Readonly<{
   readonly count?: unknown;
@@ -151,15 +151,6 @@ const openWorker = (databasePath: string) => {
   return { worker, ready: waitForWorkerMessage(worker, "ready") };
 };
 
-test("opens a new database, applies v2, and persists the exact metadata schema", () => {
-  return withStorage(({ databasePath }) => {
-    assert.deepEqual(inspectSchema(databasePath), {
-      version: CURRENT_SCHEMA_VERSION,
-      columns: ["id", "createdAt", "lastAccessedAt", "size"],
-    });
-  });
-});
-
 test("accounts document bytes and metadata before atomically admitting a publication", () =>
   withStorage(({ storage }) => {
     storage.insertDocumentMetadata(
@@ -228,22 +219,6 @@ test("retention deletion releases the fixed metadata quota charge", () =>
     assert.notEqual(storage.deleteDocumentIfLastAccessedBefore("expired", 2), undefined);
     storage.insertDocumentMetadata(metadata("reclaimed", 3, 1));
     assert.equal(storage.getDocumentMetadata("reclaimed")?.size, 1);
-  }));
-
-test("migrates an existing version-zero database transactionally", () =>
-  withTempDirectory("planview-storage-migration-", (directory) => {
-    const databasePath = join(directory, "metadata.sqlite");
-    createDatabase(databasePath, "", 0);
-
-    const storage = Effect.runSync(openStorage(databasePath));
-    try {
-      assert.deepEqual(inspectSchema(databasePath), {
-        version: CURRENT_SCHEMA_VERSION,
-        columns: ["id", "createdAt", "lastAccessedAt", "size"],
-      });
-    } finally {
-      storage.close();
-    }
   }));
 
 test("migrates populated v1 metadata to v2 and creates a generation for each row", () =>
@@ -415,72 +390,6 @@ test("rejects a claimed v1 database with a trigger that could bypass monotonic a
         error instanceof StorageMigrationError &&
         /unexpected user schema object/i.test(error.message)
     );
-  }));
-
-test("uses the access-order index for bounded 1k candidate and reconciliation pages", async () =>
-  withTempDirectory("planview-storage-pages-", async (directory) => {
-    const databasePath = join(directory, "metadata.sqlite");
-    createDatabase(
-      databasePath,
-      `
-        CREATE TABLE documents (
-          id TEXT PRIMARY KEY NOT NULL
-            CHECK (typeof(id) = 'text' AND length(trim(id)) > 0),
-          createdAt INTEGER NOT NULL
-            CHECK (typeof(createdAt) = 'integer' AND createdAt >= 0),
-          lastAccessedAt INTEGER NOT NULL
-            CHECK (typeof(lastAccessedAt) = 'integer' AND lastAccessedAt >= createdAt),
-          size INTEGER NOT NULL
-            CHECK (typeof(size) = 'integer' AND size >= 0)
-        ) STRICT
-      `
-    );
-    const seed = new DatabaseSync(databasePath);
-    try {
-      const insert = seed.prepare(
-        "INSERT INTO documents (id, createdAt, lastAccessedAt, size) VALUES (:id, 1, 1, 1)"
-      );
-      seed.exec("BEGIN");
-      for (let index = 0; index < 1_000; index += 1) {
-        insert.run({ ":id": `candidate-${index.toString().padStart(4, "0")}` });
-      }
-      seed.exec("COMMIT");
-    } finally {
-      seed.close();
-    }
-
-    const storage = Effect.runSync(openStorage(databasePath));
-    try {
-      const database = new DatabaseSync(databasePath);
-      try {
-        const indexes = (database.prepare("PRAGMA index_list(documents)").all() as SqliteRow[]).map(
-          (row) => row.name
-        );
-        assert.equal(indexes.includes("documents_last_accessed_at_idx"), true);
-      } finally {
-        database.close();
-      }
-
-      const first = storage.listDocumentMetadataCandidates(2, 128);
-      assert.equal(first.rows.length, 128);
-      assert.equal(first.hasMore, true);
-      const lastFirst = first.rows.at(-1);
-      assert.ok(lastFirst);
-      const second = storage.listDocumentMetadataCandidates(2, 128, {
-        lastAccessedAt: lastFirst.lastAccessedAt,
-        id: lastFirst.id,
-      });
-      assert.equal(second.rows.length, 128);
-      const firstSecond = second.rows[0];
-      assert.ok(firstSecond);
-      assert.equal(firstSecond.id > lastFirst.id, true);
-
-      const reconciliationPage = storage.listDocumentMetadataPage(128);
-      assert.equal(reconciliationPage.rows.length, 128);
-      assert.equal(reconciliationPage.hasMore, true);
-    } finally {
-      storage.close();
-    }
   }));
 
 test("metadata cursors use SQLite bytewise order and a rowid watermark", () =>

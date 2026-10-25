@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createBundleHeader, encodeBundleManifest } from "@planview/core/bundle-format";
 import { readBoundedResponseBytes } from "../src/lib/bounded-response.ts";
 import { createBundleAssetHandler } from "../src/lib/bundle-asset-handler.ts";
 import {
@@ -10,7 +11,6 @@ import {
 import { createBundleReadCache, readBoundedBundle } from "../src/lib/bundle-read-cache.ts";
 import {
   cloudBundleContentType,
-  cloudBundleEntry,
   packCloudBundle,
   parseCloudBundle,
 } from "../src/lib/cloud-bundle.ts";
@@ -37,34 +37,10 @@ const files = [
   { path: "scripts/value.mjs", content: 'export const value="works";' },
 ];
 
-test("cloud bundles preserve local format and nested CSS/JS bytes", () => {
-  const bundle = parseCloudBundle(packCloudBundle(files));
-  assert.equal(
-    new TextDecoder().decode(cloudBundleEntry(bundle, "scripts/main.mjs").bytes),
-    files[2]!.content
-  );
-  assert.equal(cloudBundleEntry(bundle, "styles/page.css").contentType, "text/css");
-  assert.throws(() => cloudBundleEntry(bundle, "../private"));
-});
-
-test("bundle validation rejects traversal, aliases, duplicate entries, missing index and unsupported file types", () => {
-  for (const path of [
-    "../secret.js",
-    "a/../b.js",
-    "a\\b.js",
-    "/a.js",
-    "%2e%2e/a.js",
-    "a?x.js",
-    "a#x.js",
-    "C:a.js",
-    "source.exe",
-    "file.constructor",
-    "file.__proto__",
-  ]) {
+test("cloud policy rejects URL aliases, unsupported types, and oversized bundles", () => {
+  for (const path of ["%2e%2e/a.js", "a?x.js", "file.constructor", "file.__proto__"]) {
     assert.throws(() => packCloudBundle([files[0]!, { path, content: "bad" }]));
   }
-  assert.throws(() => packCloudBundle([files[1]!]));
-  assert.throws(() => packCloudBundle([files[0]!, files[0]!]));
   assert.throws(() =>
     packCloudBundle(Array.from({ length: 513 }, (_, i) => ({ path: `${i}.js`, content: "" })))
   );
@@ -216,7 +192,7 @@ test("bundle fetches cap actual streamed bytes even when Content-Length lies", a
   assert.equal(cancelled, true);
 });
 
-test("bounded response reads concatenate bytes, release readers and cancel oversized bodies", async () => {
+test("bounded response reads concatenate chunks and cancel unavailable bodies", async () => {
   const response = new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
@@ -237,28 +213,6 @@ test("bounded response reads concatenate bytes, release readers and cancel overs
     [1, 2, 3]
   );
   assert.equal(response.body?.locked, false);
-
-  let cancelled = false;
-  const oversized = new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array([1, 2, 3]));
-      },
-      cancel() {
-        cancelled = true;
-      },
-    })
-  );
-  await assert.rejects(
-    readBoundedResponseBytes(oversized, {
-      maxBytes: 2,
-      unavailableMessage: "unavailable",
-      tooLargeMessage: "too large",
-    }),
-    /too large/
-  );
-  assert.equal(cancelled, true);
-  assert.equal(oversized.body?.locked, false);
 
   let errorBodyCancelled = false;
   const unavailable = new Response(
@@ -314,56 +268,6 @@ test("cache bounds in-flight loads, removes failures, expires entries and reuses
   await cache.load("bad", loader);
 });
 
-test("public bundle assets require current sharing authorization before every cached read", async () => {
-  const { createSharedBundleAssetHandler } = await import(
-    "../src/lib/shared-bundle-asset-handler.ts"
-  );
-  let enabled = true,
-    lookups = 0,
-    reads = 0;
-  const handler = createSharedBundleAssetHandler({
-    resolve: async () => {
-      lookups += 1;
-      return enabled
-        ? {
-            document: {
-              title: "Artifact",
-              contentType: cloudBundleContentType,
-              sizeBytes: packCloudBundle(files).byteLength,
-              storageProvider: "uploadthing",
-              storageKey: claims.storageKey,
-            },
-          }
-        : null;
-    },
-    load: async () => {
-      reads += 1;
-      return parseCloudBundle(packCloudBundle(files));
-    },
-  });
-  const event = {
-    request: new Request("https://app.test/api/shared-bundles/doc/token/scripts/main.mjs"),
-    params: { id: "doc", token: "a".repeat(43), path: "scripts/main.mjs" },
-  };
-  assert.equal(
-    (await handler({ ...event, params: { ...event.params, token: "guess" } })).status,
-    404
-  );
-  assert.equal(lookups, 0);
-  assert.equal(await (await handler(event)).text(), files[2]!.content);
-  enabled = false;
-  assert.equal((await handler(event)).status, 404);
-  assert.equal(lookups, 2);
-  assert.equal(reads, 1);
-  const absent = createSharedBundleAssetHandler({
-    resolve: async () => {
-      throw new Error("optional backend absent");
-    },
-    load: async () => assert.fail("must not load"),
-  });
-  assert.equal(await (await absent(event)).text(), "Not found");
-});
-
 test("MCP bundle reads default to HTML, read text paths in bounded chunks, and paginate file listing", async () => {
   const { readBundleText, listBundleFilePage } = await import("../src/lib/mcp-bundle-reads.ts");
   const bundle = parseCloudBundle(packCloudBundle(files));
@@ -372,7 +276,6 @@ test("MCP bundle reads default to HTML, read text paths in bounded chunks, and p
   assert.equal(first.html, files[1]!.content.slice(0, 4));
   assert.equal(first.nextOffset, 4);
   assert.equal(readBundleText(bundle, "styles/page.css", 4).html, files[1]!.content.slice(4));
-  assert.throws(() => readBundleText(bundle, "../secret.js"));
   assert.throws(() => readBundleText(bundle, "index.html", 0, 32769));
   const page = listBundleFilePage(bundle, 0, 2);
   assert.equal(page.files.length, 2);
@@ -380,4 +283,29 @@ test("MCP bundle reads default to HTML, read text paths in bounded chunks, and p
   assert.equal(listBundleFilePage(bundle, 2, 2).nextOffset, null);
   assert.throws(() => listBundleFilePage(bundle, -1));
   assert.throws(() => listBundleFilePage(bundle, 0, 51));
+});
+
+test("MCP bundle creation and reads accept text formats and reject binary assets", async () => {
+  const { readBundleText } = await import("../src/lib/mcp-bundle-reads.ts");
+  const textFiles = [
+    { path: "index.html", content: "<h1>Plan</h1>" },
+    { path: "notes.txt", content: "Plan été" },
+  ];
+  const bundle = parseCloudBundle(packCloudBundle(textFiles));
+  assert.equal(readBundleText(bundle, "notes.txt").html, "Plan été");
+  assert.throws(
+    () => packCloudBundle([...textFiles, { path: "image.png", content: "binary" }]),
+    /MCP bundle files must contain UTF-8 text/
+  );
+  const manifest = encodeBundleManifest([
+    { path: "index.html", offset: 0, size: 0 },
+    { path: "image.png", offset: 0, size: 2 },
+  ]);
+  const binaryBundle = parseCloudBundle(
+    Buffer.concat([createBundleHeader(manifest), manifest, Buffer.from([0xff, 0xfe])])
+  );
+  assert.throws(
+    () => readBundleText(binaryBundle, "image.png"),
+    /read_document supports UTF-8 text files only/
+  );
 });

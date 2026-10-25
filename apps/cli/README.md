@@ -1,16 +1,12 @@
 # plansplease CLI
 
-The public `@abijith-suresh/planview` command-line package. It publishes immutable,
-30-day-last-access-retained HTML snapshots through the private localhost daemon and
-can upload HTML files or artifact folders to the alpha cloud workspace:
+`@abijith-suresh/planview` installs the `plansplease` command. It publishes
+immutable local snapshots and uploads HTML files or artifact folders to an
+account workspace. The package is not published to npm yet.
 
-The command is `plansplease`. This release replaces the `planview` executable;
-update existing scripts to use `plansplease`. Existing profiles, local documents,
-saved cloud credentials, daemon state and installed skills keep their locations.
-The command is installed from the existing `@abijith-suresh/planview` package;
-npm publication remains disabled.
+## Install
 
-Build and install a tarball from the repository using Node.js 24.19.0 and npm 11.16.0:
+Use Node.js 24.19.0 and npm 11.16.0:
 
 ```sh
 git clone https://github.com/abijith-suresh/planview.git
@@ -26,104 +22,30 @@ npm install --global --ignore-scripts ./FILE.tgz
 plansplease --version
 ```
 
-```sh
-plansplease publish ./report.html
-# http://localhost:4777/<id>
+Use `plansplease help` or `plansplease help <command>` for command options.
+The package also includes a Unix manual page. Some npm versions register it
+with `man plansplease`; others leave it in the installed package.
 
-# A folder publishes index.html and its assets as one snapshot
-plansplease publish ./site
-# http://localhost:4777/<id>
-
-# Publish and open the URL in the default browser
-plansplease publish --open ./site
-
-# Sign in, then upload an HTML page or a folder containing index.html
-plansplease login --cloud-url http://127.0.0.1:3000
-plansplease upload ./report.html
-plansplease upload ./artifact/
-# http://127.0.0.1:3000/api/documents/<id>
-
-# Keep a feature build separate from the default installation
-plansplease --profile feature publish ./site
-
-```
-
-The CLI's default app URL is the paused staging service; use the explicit local
-URL above for local testing. The [local development guide](../docs/src/content/docs/reference/development.mdx#full-local-workspace)
-explains local account setup. The CLI recognizes its previous Railway hostname
-and uses the replacement origin for saved staging credentials, including upload
-and logout. This does not change credentials for custom cloud origins or send
-them to an environment override.
-Hosted services are currently offline; see the [features reference](../docs/src/content/docs/reference/planned-features.md).
-
-Get help for the whole CLI or for one command:
+## Local snapshots
 
 ```sh
-plansplease help
-plansplease help publish
-plansplease publish --help
-plansplease help upload
+plansplease publish --open ./report.html
+plansplease publish --open ./site/
+plansplease get <id-or-exact-local-url> > recovered.html
 ```
 
-Commands that return metadata also support one JSON object on stdout:
+`publish` accepts a regular `.html` or `.htm` file, or a folder with root
+`index.html` and up to 512 files. The encoded snapshot, including a folder's
+manifest, must fit within 10 MiB. Symlinks and changing folders are rejected.
+Editing the source does not change a snapshot. Publish again for a new URL.
 
-```sh
-plansplease publish --json ./report.html
-plansplease upload --json ./report.html
-plansplease status --json
-```
+The detached daemon binds to `127.0.0.1:4777` or the next available port within
+50 ports. Use the exact URL printed by `publish`. A folder's root URL redirects
+to `index.html`; its assets are available below `/<id>/`.
 
-The package includes a Unix manual page. On npm versions that register package
-man pages, a global install makes it available as:
-
-```sh
-man plansplease
-```
-
-`plansplease help` is the portable help path. Newer npm versions may keep the
-manual in the package without registering it with the system `man` command.
-
-## Automation contract
-
-Successful results go to stdout. Errors go to stderr. Exit status `0` means
-success; exit status `1` means invalid input or an operation failure. `get`
-writes only the stored document bytes to stdout.
-
-Global options must appear before the command. Command options may appear
-before or after operands. `--` ends command option parsing, and an
-unknown option fails before the command starts work. Commands that accept
-`--json` write one newline-terminated JSON value. For example:
-
-```json
-{"id":"<id>","url":"http://localhost:4777/<id>"}
-```
-
-`status --json` reports either `{"state":"stopped"}` or a running daemon
-with its `profile`, `host`, `port`, `pid`, and `startedAt`. `start --json` adds `reused`.
-`stop --json` reports the stopped state. `clean --json` returns cleanup counts
-and failure messages without internal causes. `publish --open` keeps the
-normal publish result and adds the browser-opening side effect.
-
-## Cloud uploads
-
-`plansplease login` opens the selected app's account sign-in in a browser and
-asks you to authorize the local CLI. Hosted sign-in uses GitHub; the local
-workspace uses its local test account. The CLI stores the credential in the selected profile's
-Planview data directory. On POSIX systems the directory is mode `0700` and the
-credential file is mode `0600`. The credential permits cloud uploads only and
-stays valid until revoked. `plansplease logout` revokes it on the cloud service,
-then removes the local file; it needs a connection to complete. Renaming the
-command does not require signing in again.
-Set `PLANVIEW_CLOUD_URL` or pass `--cloud-url <origin>` to `plansplease login` to
-use another cloud app. Use `http://127.0.0.1:3000` for local testing. Hosted
-availability is tracked in the [features reference](../docs/src/content/docs/reference/planned-features.md).
-
-`plansplease upload <file.html>` accepts one standalone `.html` file or an
-artifact folder up to 8 MiB and returns its workspace preview link. The preview requires the same account to
-be signed in in the browser; it is not an anonymous share link. Use `--open` to
-open the returned link or `--json` to print the document ID and URL.
-
-The daemon can also be managed directly:
+`get` writes the stored HTML bytes to stdout. It accepts an ID or an exact local
+URL for the selected profile's current port. It does not read cloud documents
+or follow a folder-root redirect; open artifact folders in a browser.
 
 ```sh
 plansplease start
@@ -133,70 +55,99 @@ plansplease restart
 plansplease clean
 ```
 
-The daemon is detached and binds to `127.0.0.1:4777` when available. If that
-port is occupied, it tries the next 50 ports and stores the selected port in
-the protected runtime descriptor. The URL printed by `publish` always uses
-the selected port. Each profile has its own durable app-data and runtime
-directory; the default profile keeps the existing Planview data location and
-named profiles live below `planview/profiles/<name>`. The existing `PLANVIEW_*`
-environment settings and local directories retain their names. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
-limit before starting the daemon, then prints only the resulting localhost URL.
-When the input is a folder, it must contain `index.html`; the folder is packed
-into one immutable snapshot, with asset paths available below `/<id>/`.
-`get` accepts a document id or exact local Planview URL for the selected
-profile and writes only the stored HTML bytes to stdout; invalid references,
-URLs from another active profile, and missing documents fail on stderr. `clean` starts or reuses the daemon and invokes its authenticated
-30-day-last-access retention and startup-reconciliation policy, printing a
-human-readable summary to stdout. `status` does not start a daemon; `start`
-reuses an authenticated daemon it owns and never terminates an unknown process
-listening on the port.
-The package source includes the `planview` and `create-html` Agent Skills. Use
-the [Vercel Skills CLI](https://github.com/vercel-labs/skills) to install them.
-From a project directory, install them into that project (the default):
+`status` does not start the daemon or create runtime state. `start` reuses an
+authenticated daemon it owns and never terminates an unknown process on the port.
+`clean` starts or reuses the daemon, removes snapshots last accessed more than
+30 days ago, and reconciles incomplete storage operations. Cleanup also runs
+at startup and every 24 hours.
+
+## Cloud uploads
+
+Hosted services are currently offline; see the
+[features reference](../docs/src/content/docs/reference/planned-features.md).
+For testing, start the [local workspace](../docs/src/content/docs/reference/development.mdx#full-local-workspace),
+then run:
+
+```sh
+plansplease login --cloud-url http://127.0.0.1:3000
+plansplease upload --open ./report.html
+plansplease upload --json ./artifact/
+plansplease logout
+```
+
+Login opens a browser for account sign-in and CLI authorization. The local
+workspace uses a test account; the hosted configuration uses GitHub. Pass
+`--cloud-url <origin>` to login or set `PLANVIEW_CLOUD_URL` to select another
+app. Upload and logout use the destination saved at login.
+
+The credential permits uploads only and stays valid until revoked. Logout
+revokes it before removing the local file, so it requires a connection. Use MCP
+or the workspace to list and read cloud documents.
+
+Upload accepts one standalone `.html` file or an artifact folder with root
+`index.html`. A bundle can contain up to 512 files and must fit within 8 MiB,
+including its manifest. Supported assets include HTML, CSS, JavaScript, modules,
+JSON, text, SVG, common images, fonts, and MP4/WebM. Paths use ASCII letters,
+digits, dots, underscores, hyphens, and `/` folders. The complete encoded object
+counts against the account quota.
+
+The returned workspace URL requires the owning account to sign in. Relative
+stylesheets, scripts, and module imports resolve within the artifact. Bundle
+previews issue a five-minute read capability; reopen the workspace URL when it
+expires. UploadThing object URLs are public during alpha. Use non-sensitive
+content.
+
+## Profiles and local storage
+
+```sh
+plansplease --profile work publish ./report.html
+```
+
+Profiles isolate local documents, daemon state, and saved cloud credentials.
+The default profile keeps the existing Planview data location; named profiles
+live below `planview/profiles/<name>`. Environment settings retain their
+`PLANVIEW_*` names.
+
+On POSIX, app-data and runtime directories are owned by the current UID and
+restricted to `0700`. Credentials, descriptors, and lock files use `0600`.
+Windows users must provide an account-owned app-data directory that other users
+cannot write. Node does not provide portable APIs to enforce NTFS ACLs or
+classify every reparse point. The daemon's loopback binding and authenticated
+requests do not provide filesystem isolation against a hostile local user.
+
+## Automation
+
+Successful results go to stdout; errors go to stderr. Exit status `0` means
+success and `1` means invalid input or an operation failure. `get` writes only
+document bytes.
+
+Global options precede the command. Command options can precede or follow
+operands. `--` ends option parsing; unknown options fail before work starts.
+Commands accepting `--json` emit one newline-terminated JSON value:
+
+```sh
+plansplease publish --json ./report.html
+# {"id":"<id>","url":"http://localhost:4777/<id>"}
+```
+
+`status --json` returns `{"state":"stopped"}` or a running daemon's `profile`,
+`host`, `port`, `pid`, and `startedAt`. `start --json` adds `reused`.
+`stop --json` returns the stopped state. `clean --json` includes cleanup counts
+and failure messages without internal causes. `--open` opens the returned URL
+and preserves the normal command output.
+
+## Agent skills
+
+The package includes `planview` and `create-html` skills. Install them into your
+project with the [Vercel Skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
 ```
 
-From a Planview checkout, use the local source instead:
+From a Planview checkout, use `npx skills add ./apps/cli/skills`. Add `-g` for
+user-wide installation, `-a codex` to select Codex, and `-y` to skip prompts.
+Rerun the command to replace existing copies.
 
-```sh
-npx skills add ./apps/cli/skills
-```
-
-Add `-g` only when you want user-wide installation across projects. Select an
-agent with `-a codex`; add `-y` for a non-interactive install. See the [Skills
-CLI installation reference](https://github.com/vercel-labs/skills/blob/main/docs/commands.md#skills-add)
-for all supported agents and options.
-
-Existing global Planview skills remain in place until replaced. To replace or
-refresh the global Codex copies, run:
-
-```sh
-npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills -g -a codex -y
-```
-
-On POSIX, the app-data and runtime directories are owned by the current UID and
-protected with `0700`; descriptor and lock files are owned by that UID and
-protected with `0600`. Windows does not expose a portable Node API for enforcing
-NTFS ACLs or classifying every reparse point, so those mode values are not a
-Windows privacy guarantee. Under the single-user local trust model, Windows
-users must provision an account-owned, non-user-writable app-data
-directory. Planview claims loopback binding and authenticated lifecycle
-requests, not hostile-local-user filesystem isolation on Windows.
-
-## Published artifact
-
-The private daemon workspace is bundled into the CLI's `dist` artifact during
-build and pack. The published package includes the Agent Skills under `skills/`
-and therefore has no manifest or TypeScript-declaration dependency on a private
-`@planview/*` workspace.
-
-Cloud artifact folders require `index.html`. HTML, CSS, JavaScript, modules, JSON,
-text, SVG, common images, fonts, and MP4/WebM assets are supported. Paths use ASCII
-letters, digits, dots, underscores, hyphens, and `/` folders. Symlinks and changing
-folders are rejected. One encoded bundle, including its manifest, must fit within
-8 MiB and 512 files. The whole object counts against the account storage limit.
-Relative CSS, classic scripts, and module imports resolve within the artifact.
-The returned workspace URL requires owner sign-in; its preview issues a five-minute
-read capability. Reopen the workspace URL when that capability expires.
+The build bundles the private local-runtime packages into `dist`. The installed
+CLI and its declarations do not depend on private `@planview/*` packages.

@@ -457,6 +457,24 @@ const syncDirectory = async (directory: TrustedDirectory) => {
 const isValidStagedHandle = (value: unknown): value is StagedDocumentFileHandle =>
   typeof value === "string" && STAGED_HANDLE_PATTERN.test(value);
 
+const finalizationLockEntry = (entry: string) => {
+  if (!entry.startsWith(".") || !entry.endsWith(".lock")) {
+    return undefined;
+  }
+  const body = entry.slice(1, -".lock".length);
+  if (isValidStagedHandle(body)) {
+    return { kind: "staged" as const, id: body };
+  }
+  if (body.endsWith(".target")) {
+    try {
+      return { kind: "target" as const, id: validateDocumentId(body.slice(0, -".target".length)) };
+    } catch {
+      // Unknown lock names are retained rather than guessed at.
+    }
+  }
+  return undefined;
+};
+
 const validateStagedHandle = (value: unknown) => {
   if (!isValidStagedHandle(value)) {
     throw new InvalidStagedDocumentFileHandleError({
@@ -2554,6 +2572,32 @@ const createStore = ({
     return true;
   };
 
+  const reconcileReadReference = async (entry: string) => {
+    const path = entryPath(stagingDir, entry);
+    const observation = await readReadReference(path);
+    if (
+      observation === undefined ||
+      observation.metadata.owner.host !== LOCAL_HOSTNAME ||
+      isProcessAlive(observation.metadata.owner.pid)
+    ) {
+      // Malformed markers, foreign owners, and live local owners are retained.
+      // Only a marker whose local owner is definitely dead can be reclaimed.
+      return "retained";
+    }
+    const fresh = await readReadReference(path);
+    if (
+      fresh === undefined ||
+      !sameFileIdentity(observation.identity, fresh.identity) ||
+      fresh.metadata.owner.host !== LOCAL_HOSTNAME ||
+      fresh.metadata.owner.pid !== observation.metadata.owner.pid ||
+      fresh.metadata.acquiredAt !== observation.metadata.acquiredAt ||
+      isProcessAlive(fresh.metadata.owner.pid)
+    ) {
+      return "retained";
+    }
+    return (await discardEntry(stagingDir, entry, fresh.identity)) ? "removed" : "absent";
+  };
+
   const reconcileDocumentFilesUnbounded = async () => {
     const releaseOperation = beginOperation();
     try {
@@ -2571,19 +2615,8 @@ const createStore = ({
         if (readReferenceEntry(entry) !== undefined) {
           continue;
         }
-        if (entry.startsWith(".") && entry.endsWith(".lock")) {
-          const body = entry.slice(1, -".lock".length);
-          if (isValidStagedHandle(body)) {
-            continue;
-          }
-          if (body.endsWith(".target")) {
-            try {
-              validateDocumentId(body.slice(0, -".target".length));
-              continue;
-            } catch {
-              // An unknown lock name is retained and reported below.
-            }
-          }
+        if (finalizationLockEntry(entry) !== undefined) {
+          continue;
         }
         retainedEntries += 1;
       }
@@ -2593,33 +2626,11 @@ const createStore = ({
         if (readReferenceEntry(entry) === undefined) {
           continue;
         }
-        const path = entryPath(stagingDir, entry);
         try {
-          const observation = await readReadReference(path);
-          if (
-            observation === undefined ||
-            observation.metadata.owner.host !== LOCAL_HOSTNAME ||
-            isProcessAlive(observation.metadata.owner.pid)
-          ) {
-            // Malformed markers, foreign owners, and live local owners are
-            // retained. Only a marker whose local owner is definitely dead
-            // can be reclaimed after a crashed read.
+          const result = await reconcileReadReference(entry);
+          if (result === "retained") {
             retainedEntries += 1;
-            continue;
-          }
-          const fresh = await readReadReference(path);
-          if (
-            fresh === undefined ||
-            !sameFileIdentity(observation.identity, fresh.identity) ||
-            fresh.metadata.owner.host !== LOCAL_HOSTNAME ||
-            fresh.metadata.owner.pid !== observation.metadata.owner.pid ||
-            fresh.metadata.acquiredAt !== observation.metadata.acquiredAt ||
-            isProcessAlive(fresh.metadata.owner.pid)
-          ) {
-            retainedEntries += 1;
-            continue;
-          }
-          if (await discardEntry(stagingDir, entry, fresh.identity)) {
+          } else if (result === "removed") {
             readReferencesRemoved += 1;
             removedReadReference = true;
           }
@@ -2682,33 +2693,18 @@ const createStore = ({
       }
 
       for (const entry of entries) {
-        let lockId: string | undefined;
-        let lockPath: string | undefined;
-        if (entry.startsWith(".") && entry.endsWith(".lock")) {
-          const body = entry.slice(1, -".lock".length);
-          if (isValidStagedHandle(body)) {
-            lockId = body;
-            lockPath = entryPath(stagingDir, entry);
-          } else if (body.endsWith(".target")) {
-            const targetId = body.slice(0, -".target".length);
-            try {
-              lockId = validateDocumentId(targetId);
-              lockPath = entryPath(stagingDir, entry);
-            } catch {
-              // Unknown lock names are retained rather than guessed at.
-            }
-          }
-        }
-        if (lockPath === undefined || handledLocks.has(entry)) {
+        const lock = finalizationLockEntry(entry);
+        if (lock === undefined || handledLocks.has(entry)) {
           continue;
         }
+        const lockPath = entryPath(stagingDir, entry);
         try {
-          if (lockId !== undefined && isValidStagedHandle(lockId)) {
-            const stagedPath = stagingPath(lockId);
+          if (lock.kind === "staged") {
+            const stagedPath = stagingPath(lock.id);
             if (await isFreshResource(stagedPath)) {
               retainedEntries += 1;
             } else {
-              const removed = await discardStagedFile(lockId);
+              const removed = await discardStagedFile(lock.id);
               if (removed) {
                 stagedFilesRemoved += 1;
               }
@@ -2720,10 +2716,7 @@ const createStore = ({
                 finalizationLocksRemoved += 1;
               }
             }
-          } else if (
-            lockId !== undefined &&
-            (await reconcileLock(lockPath, documentPath(lockId)))
-          ) {
+          } else if (await reconcileLock(lockPath, documentPath(lock.id))) {
             finalizationLocksRemoved += 1;
           } else {
             retainedEntries += 1;
@@ -2798,29 +2791,10 @@ const createStore = ({
         afterName = entry;
         try {
           if (readReferenceEntry(entry) !== undefined) {
-            const path = entryPath(stagingDir, entry);
-            const observation = await readReadReference(path);
-            if (
-              observation === undefined ||
-              observation.metadata.owner.host !== LOCAL_HOSTNAME ||
-              isProcessAlive(observation.metadata.owner.pid)
-            ) {
+            const result = await reconcileReadReference(entry);
+            if (result === "retained") {
               retainedEntries += 1;
-              continue;
-            }
-            const fresh = await readReadReference(path);
-            if (
-              fresh === undefined ||
-              !sameFileIdentity(observation.identity, fresh.identity) ||
-              fresh.metadata.owner.host !== LOCAL_HOSTNAME ||
-              fresh.metadata.owner.pid !== observation.metadata.owner.pid ||
-              fresh.metadata.acquiredAt !== observation.metadata.acquiredAt ||
-              isProcessAlive(fresh.metadata.owner.pid)
-            ) {
-              retainedEntries += 1;
-              continue;
-            }
-            if (await discardEntry(stagingDir, entry, fresh.identity)) {
+            } else if (result === "removed") {
               readReferencesRemoved += 1;
               await syncDirectory(stagingDir);
             }
@@ -2866,15 +2840,15 @@ const createStore = ({
             continue;
           }
 
-          if (entry.startsWith(".") && entry.endsWith(".lock")) {
-            const body = entry.slice(1, -".lock".length);
+          const lock = finalizationLockEntry(entry);
+          if (lock !== undefined) {
             const lockPath = entryPath(stagingDir, entry);
-            if (isValidStagedHandle(body)) {
-              const stagedPath = stagingPath(body);
+            if (lock.kind === "staged") {
+              const stagedPath = stagingPath(lock.id);
               try {
                 const stagedStats = await lstat(stagedPath);
                 if (stagedStats.isFile() && !stagedStats.isSymbolicLink()) {
-                  stagedIdentities.set(body, stagedStats);
+                  stagedIdentities.set(lock.id, stagedStats);
                 }
               } catch (cause) {
                 if (!isNotFound(cause)) {
@@ -2885,7 +2859,7 @@ const createStore = ({
                 retainedEntries += 1;
                 continue;
               }
-              const removed = await discardStagedFile(body);
+              const removed = await discardStagedFile(lock.id);
               if (removed) {
                 stagedFilesRemoved += 1;
               }
@@ -2898,23 +2872,19 @@ const createStore = ({
               }
               continue;
             }
-            if (body.endsWith(".target")) {
-              const targetId = body.slice(0, -".target".length);
-              try {
-                const documentId = validateDocumentId(targetId);
-                const removed = await reconcileLock(lockPath, documentPath(documentId));
-                if (removed) {
-                  finalizationLocksRemoved += 1;
-                } else {
-                  retainedEntries += 1;
-                }
-                continue;
-              } catch (cause) {
-                if (isNotFound(cause)) {
-                  continue;
-                }
-                throw cause;
+            try {
+              const removed = await reconcileLock(lockPath, documentPath(lock.id));
+              if (removed) {
+                finalizationLocksRemoved += 1;
+              } else {
+                retainedEntries += 1;
               }
+              continue;
+            } catch (cause) {
+              if (isNotFound(cause)) {
+                continue;
+              }
+              throw cause;
             }
           }
           retainedEntries += 1;

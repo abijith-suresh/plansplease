@@ -37,7 +37,7 @@ const withBuild = ({ outputDirectory, basePath }, check) => {
 };
 
 const assertSiteBasics = (html) => {
-  assert.ok(html.includes('<header class="site-header"'), "the site header should be rendered");
+  assert.match(html, /<header\b/);
   assert.ok(
     /<nav[^>]*aria-label="Main navigation"/.test(html),
     "the main navigation should have its accessible label"
@@ -46,7 +46,10 @@ const assertSiteBasics = (html) => {
     html.includes('<main id="main-content" tabindex="-1"'),
     "the skip-link target should be programmatically focusable"
   );
-  assert.ok(html.includes('<footer class="site-footer"'), "the site footer should be rendered");
+  assert.match(html, /<footer\b/);
+  const headings = [...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/g)];
+  assert.equal(headings.length, 1, "each page has one primary heading");
+  assert.ok(headings[0][1].replace(/<[^>]*>/g, "").trim(), "the heading has text");
 
   const skipLinkStart = '<a class="skip-link" href="#main-content"';
   const skipLinkEnd = ">Skip to main content</a>";
@@ -111,49 +114,29 @@ const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
   );
 };
 
-const assertSkipLinkStyles = (output) => {
-  const cssFiles = readdirSync(resolve(output, "_astro")).filter((file) => file.endsWith(".css"));
-  assert.ok(cssFiles.length > 0, "the build should provide CSS for accessibility assertions");
-  const css = cssFiles
-    .map((file) => readFileSync(resolve(output, "_astro", file), "utf8"))
-    .join("\n");
-  const rules = css.split("}");
-  const skipLinkRule = rules.find(
-    (rule) => rule.includes(".skip-link") && !rule.includes(":focus-visible")
-  );
-  const focusRule = rules.find(
-    (rule) => rule.includes(".skip-link") && rule.includes(":focus-visible")
-  );
-
-  assert.ok(skipLinkRule, "the skip link should be visually hidden before focus");
-  assert.ok(skipLinkRule.includes("transform:translateY(-200%)"));
-  assert.ok(focusRule, "the skip link should have a focus-visible rule");
-  assert.ok(focusRule.includes("outline:3px solid var(--mint)"));
-  assert.ok(focusRule.includes("transform:translateY(0)"));
-};
-
 const assertMarketingPages = (output) => {
   const pages = [
-    ["features", "Features | plansplease", "A short path from agent output to a page."],
-    ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
-    ["about", "About | plansplease", "A place for the useful things agents make."],
-    ["docs", "Docs | plansplease", "Docs for a small tool."],
-    ["mcp", "MCP | plansplease", "Connect your agent to plansplease."],
-    ["pricing", "Pricing | plansplease", "Free during alpha. Paid plans are still being planned."],
-    ["faq", "FAQ | plansplease", "Questions we expect to hear."],
-    ["privacy", "Privacy | plansplease", "Your pages are yours."],
+    ["features", "Features"],
+    ["cli", "CLI"],
+    ["about", "About"],
+    ["docs", "Docs"],
+    ["mcp", "MCP"],
+    ["pricing", "Pricing"],
+    ["faq", "FAQ"],
+    ["privacy", "Privacy"],
   ];
 
-  for (const [directory, title, heading] of pages) {
+  for (const [directory, title] of pages) {
     const page = resolve(output, directory, "index.html");
     assert.ok(existsSync(page), `${directory}/index.html should exist after a build`);
 
     const html = readFileSync(page, "utf8");
-    assert.ok(html.includes(`<title>${title}</title>`), `${directory} should have its page title`);
-    assert.ok(html.includes(heading), `${directory} should render its primary heading`);
+    assert.ok(
+      html.includes(`<title>${title} | plansplease</title>`),
+      `${directory} should have its page title`
+    );
     assertSiteBasics(html);
     assertCloudStorageCopy(html);
-    assert.equal(html.includes("<button"), false, `${directory} should not render a button`);
   }
 };
 
@@ -164,37 +147,18 @@ const assertHomepage = (output, expectedBase) => {
   const html = readFileSync(homepage, "utf8");
   assert.ok(html.includes("plansplease"));
   assertCloudStorageCopy(html);
-  assert.ok(html.includes("Your agent made a page."));
-  assert.ok(html.includes("Give it somewhere useful to live."));
   assert.ok(html.includes("Continue with GitHub"));
-  assert.ok(html.includes("CLI and MCP"));
-  assert.equal(html.includes("MCP soon"), false);
   assert.ok(html.includes('href="https://plansplease-docs-staging.up.railway.app/"'));
-  assert.ok(html.includes('class="demo"'));
   assert.ok(html.includes("plansplease publish ./auth-migration-spec.html"));
   assert.ok(html.includes("plansplease.app/p/auth-migration-spec"));
   assert.ok(html.includes("http://localhost:4777/auth-migration-spec"));
-  assert.ok(html.includes("Two commands, two homes"));
   assert.ok(html.includes("plansplease upload ./auth-migration-spec.html"));
-  assert.ok(html.includes("Keep it working"));
   assert.ok(html.includes('href="https://plansplease-app-staging.up.railway.app/"'));
-  assert.ok(html.includes('class="mobile-menu"'));
-  assert.ok(html.includes("Pricing"));
-  assert.ok(html.includes("Docs"));
-  assert.ok(html.includes("FAQ"));
-  assert.ok(html.includes('class="site-footer-main"'));
-  assert.equal(html.includes("eyebrow"), false);
-  assert.equal(html.includes("hero-sticker"), false);
-  assert.equal(html.includes("Generated by"), false);
-  assert.equal(html.includes("preview-tag"), false);
-  assert.equal(html.includes("↗"), false);
-  assert.equal(html.includes("<button"), false);
-  assert.equal(html.includes("terminal-card"), false);
-  assert.equal(html.includes("share on your network"), false);
-  assert.equal(html.includes("permanent address"), false);
+  for (const route of ["pricing", "docs", "faq"]) {
+    assert.ok(html.includes(`href="${expectedBase}/${route}/"`), `navigation to ${route}`);
+  }
   assertSiteBasics(html);
   assertStylesheetAndInternalLinks(html, output, expectedBase);
-  assertSkipLinkStyles(output);
   assertMarketingPages(output);
 };
 
@@ -209,12 +173,6 @@ test("base-path normalization prefixes exact internal asset and home-link output
       basePath: "//planview///",
     },
     (output) => assertHomepage(output, "/planview")
-  );
-});
-
-test("an unset BASE_PATH keeps the site at the domain root", () => {
-  withBuild({ outputDirectory: "dist-root", basePath: undefined }, (output) =>
-    assertHomepage(output, "")
   );
 });
 

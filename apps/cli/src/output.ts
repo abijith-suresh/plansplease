@@ -5,62 +5,20 @@ export type StdoutWriter = (message: string | Uint8Array) => void | Promise<void
 
 export const writeStdout: StdoutWriter = (message) =>
   new Promise<void>((resolvePromise, rejectPromise) => {
-    let writeFinished = false;
-    let waitingForDrain = true;
-    let settled = false;
-
-    const cleanup = () => {
-      process.stdout.off("drain", onDrain);
-      process.stdout.off("error", onError);
-    };
-    const finish = (cause?: Error) => {
-      if (settled) {
-        return;
-      }
-      if (cause !== undefined) {
-        settled = true;
-        // Keep the error listener until a possible write error event arrives;
-        // some streams report EPIPE through both the callback and the event.
-        process.stdout.off("drain", onDrain);
-        rejectPromise(cause);
-        return;
-      }
-      if (!writeFinished || waitingForDrain) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolvePromise();
-    };
-    const onError = (cause: Error) => {
-      finish(cause);
-      process.stdout.off("error", onError);
-    };
-    const onDrain = () => {
-      waitingForDrain = false;
-      finish();
-    };
-    const onWrite = (cause?: Error | null) => {
-      if (cause !== undefined && cause !== null) {
-        finish(cause);
-        return;
-      }
-      writeFinished = true;
-      finish();
-    };
-
-    process.stdout.once("error", onError);
+    process.stdout.once("error", rejectPromise);
     try {
-      waitingForDrain = !process.stdout.write(message, onWrite);
+      process.stdout.write(message, (cause) => {
+        if (cause) {
+          // EPIPE can also emit an error event after the callback rejects.
+          // Keep the once listener until that event consumes it.
+          rejectPromise(cause);
+          return;
+        }
+        process.stdout.off("error", rejectPromise);
+        resolvePromise();
+      });
     } catch (cause) {
-      finish(cause instanceof Error ? cause : new Error(String(cause)));
-      return;
-    }
-    if (!waitingForDrain) {
-      finish();
-    } else {
-      process.stdout.once("drain", onDrain);
-      finish();
+      rejectPromise(cause instanceof Error ? cause : new Error(String(cause)));
     }
   });
 

@@ -3,6 +3,7 @@ export {
   cloudBundleMaxBytes,
   cloudBundleMime,
   cloudBundleEntry,
+  isCloudBundleTextMime,
   packCloudBundle,
   parseCloudBundle,
   type CloudBundle,

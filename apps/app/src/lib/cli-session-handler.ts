@@ -43,14 +43,9 @@ export function createCliSessionHandler<Client>(
       await dependencies.issueCredential(client, credential.tokenHash);
       return Response.json({ token: credential.secret }, { headers: privateHeaders });
     } catch (error) {
-      if (isConvexConfigurationError(error)) {
-        const response = dependencies.missingServerConfigurationResponse();
-        for (const [name, value] of Object.entries(privateHeaders))
-          response.headers.set(name, value);
-        return response;
-      }
-
-      const response = dependencies.errorResponse(error);
+      const response = isConvexConfigurationError(error)
+        ? dependencies.missingServerConfigurationResponse()
+        : dependencies.errorResponse(error);
       for (const [name, value] of Object.entries(privateHeaders)) response.headers.set(name, value);
       return response;
     }

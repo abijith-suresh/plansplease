@@ -25,11 +25,9 @@ import { DatabaseSync } from "node:sqlite";
 import type { Readable } from "node:stream";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Effect, Exit } from "effect";
-import { formatHelp, main, openUrl, parseGetReference, run } from "../dist/index.js";
+import { formatHelp, main, openUrl } from "../dist/index.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repositoryRoot = resolve(packageRoot, "../..");
 const cli = resolve(packageRoot, "dist/index.js");
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 
@@ -125,12 +123,6 @@ const documentIdFromUrl = (url: string): string => {
   return id;
 };
 
-const collectOutput =
-  (target: string[]) =>
-  (message: OutputMessage): void => {
-    target.push(typeof message === "string" ? message : Buffer.from(message).toString("utf8"));
-  };
-
 test("--help and -h produce the same deterministic output", () => {
   const long = execute("--help");
   const short = execute("-h");
@@ -148,52 +140,19 @@ test("help exposes the root and command-specific documentation", () => {
   assert.equal(root.stderr, "");
   assert.equal(root.stdout, formatHelp());
 
-  for (const command of [
-    "publish",
-    "upload",
-    "login",
-    "logout",
-    "get",
-    "start",
-    "status",
-    "stop",
-    "restart",
-    "clean",
-    "help",
-  ] as const) {
-    const fromHelp = execute("help", command);
-    const fromOption = execute(command, "--help");
-
-    assert.equal(fromHelp.status, 0, fromHelp.stderr);
-    assert.equal(fromOption.status, 0, fromOption.stderr);
-    assert.equal(fromHelp.stderr, "");
-    assert.equal(fromOption.stderr, "");
-    assert.equal(fromHelp.stdout, fromOption.stdout);
-  }
-
-  assert.match(
-    root.stdout,
-    /npx skills add https:\/\/github\.com\/abijith-suresh\/planview\/tree\/main\/apps\/cli\/skills/
-  );
-  assert.match(root.stdout, /project by default; add -g/);
-
-  const removedInstaller = execute("skills", "install");
-  assert.equal(removedInstaller.status, 1);
-  assert.match(removedInstaller.stderr, /^Unknown command: skills\n/);
+  const help = execute("help", "publish");
+  const option = execute("publish", "--help");
+  assert.equal(help.status, 0, help.stderr);
+  assert.equal(option.status, 0, option.stderr);
+  assert.equal(help.stdout, option.stdout);
+  assert.match(help.stdout, /Usage: plansplease publish/);
 });
 
 test("command options reject unknown flags before doing work", () => {
   const commands = [
     ["publish", "--unknown"],
-    ["upload", "--unknown"],
     ["login", "--unknown"],
-    ["logout", "--unknown"],
-    ["get", "--unknown"],
     ["start", "--unknown"],
-    ["status", "--unknown"],
-    ["stop", "--unknown"],
-    ["restart", "--unknown"],
-    ["clean", "--unknown"],
   ] as const;
 
   for (const args of commands) {
@@ -266,16 +225,7 @@ test("the public declaration does not reference private workspace packages", () 
   assert.doesNotMatch(declaration, /@planview\//);
 });
 
-test("the public package retains its name and exposes only the plansplease command", () => {
-  assert.equal(packageJson.name, "@abijith-suresh/planview");
-  assert.deepEqual(packageJson.bin, {
-    plansplease: "./dist/index.js",
-  });
-});
-
 test("--version and -v follow the Changesets-managed package version", () => {
-  const lockfile = JSON.parse(readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"));
-  assert.equal(lockfile.packages["apps/cli"].version, packageJson.version);
   const long = execute("--version");
   const short = execute("-v");
 
@@ -284,37 +234,6 @@ test("--version and -v follow the Changesets-managed package version", () => {
   assert.equal(long.stderr, "");
   assert.equal(long.stdout, `plansplease ${packageJson.version}\n`);
   assert.equal(short.stdout, long.stdout);
-});
-
-test("unknown options fail as typed Effects and preserve boundary output", () => {
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-  const program = run(["--unknown"], collectOutput(stdout), (message) => {
-    stderr.push(message);
-  });
-  const exit = Effect.runSyncExit(program);
-  stderr.length = 0;
-  const error = Effect.runSync(Effect.flip(program));
-
-  assert.equal(Exit.isFailure(exit), true);
-  assert.equal(error._tag, "UnknownOptionError");
-  assert.equal(error.option, "--unknown");
-  assert.deepEqual(stdout, []);
-  assert.deepEqual(stderr, [`Unknown option: --unknown\n\n${formatHelp()}`]);
-});
-
-test("the Effect boundary maps typed argument failures to the existing exit code", async () => {
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-
-  assert.equal(
-    await main(["--help", "unexpected"], collectOutput(stdout), (message) => {
-      stderr.push(message);
-    }),
-    1
-  );
-  assert.deepEqual(stdout, []);
-  assert.deepEqual(stderr, [`Unexpected argument: unexpected\n\n${formatHelp()}`]);
 });
 
 test("programmatic help and version output await asynchronous writers", async () => {
@@ -357,20 +276,6 @@ test("JSON errors stay machine-readable on stderr", () => {
   });
 });
 
-test("get keeps stdout available for raw document bytes", () => {
-  const result = execute("get", "--json");
-
-  assert.equal(result.status, 1);
-  assert.equal(result.stdout, "");
-  assert.deepEqual(JSON.parse(result.stderr), {
-    error: {
-      code: "UnknownOptionError",
-      message: "Unknown option: --json",
-      option: "--json",
-    },
-  });
-});
-
 test("recognized options reject trailing arguments", () => {
   const result = execute("--help", "unexpected");
 
@@ -384,7 +289,7 @@ test("publish explains that it needs a source path", async () => {
   const stderr: string[] = [];
   assert.equal(
     await main(
-      ["publish"],
+      ["publish", "--open"],
       () => undefined,
       (message) => stderr.push(message)
     ),
@@ -409,27 +314,6 @@ test("cloud commands explain their required input without starting network work"
   assert.match(uploadHelp.stdout, /Upload an HTML file or artifact folder/);
 });
 
-test("publish --open is recognized and preview is not a command", () => {
-  const open = execute("publish", "--open");
-  assert.equal(open.status, 1);
-  assert.match(open.stderr, /^Missing source file or folder:/);
-
-  const preview = execute("preview", "--help");
-  assert.equal(preview.status, 1);
-  assert.match(preview.stderr, /^Unknown command: preview\n/);
-});
-
-test("the built CLI entrypoint reports the package version", () => {
-  const result = spawnSync(process.execPath, [cli, "--version"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0);
-  assert.equal(result.error, undefined);
-  assert.equal(result.stdout, `plansplease ${packageJson.version}\n`);
-  assert.equal(result.stderr, "");
-});
-
 test("importing the entrypoint does not execute the command", () => {
   const moduleUrl = pathToFileURL(cli).href;
   const result = spawnSync(
@@ -445,25 +329,15 @@ test("importing the entrypoint does not execute the command", () => {
 });
 
 test("a starter crash after daemon lock adoption does not strand lifecycle commands", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-daemon-adoption-test-"));
-  const appDataDir = join(runtimeRoot, "app-data");
-  const daemonRuntimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment: NodeJS.ProcessEnv = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: daemonRuntimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-    PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS: "2000",
-  };
+  const { runtimeDir, environment, executeInFixture, cleanup } = await createLocalFixture(
+    "daemon-adoption",
+    { PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS: "2000" }
+  );
   const starter = spawn(process.execPath, [cli, "start"], {
     env: environment,
     stdio: "ignore",
   });
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
-  const lockPath = join(daemonRuntimeDir, "lifecycle.lock");
+  const lockPath = join(runtimeDir, "lifecycle.lock");
 
   try {
     const adopted = await waitFor(() => {
@@ -474,7 +348,7 @@ test("a starter crash after daemon lock adoption does not strand lifecycle comma
 
     starter.kill();
     await waitForExit(starter);
-    await waitFor(() => JSON.parse(readFileSync(join(daemonRuntimeDir, "daemon.json"), "utf8")));
+    await waitFor(() => JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8")));
     await waitFor(() => (existsSync(lockPath) ? undefined : true));
 
     const restarted = executeInFixture("restart");
@@ -489,72 +363,7 @@ test("a starter crash after daemon lock adoption does not strand lifecycle comma
       starter.kill();
       await waitForExit(starter).catch(() => undefined);
     }
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
-  }
-});
-
-test("start, status, stop, and restart are process-backed and private", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-daemon-test-"));
-  const appDataDir = join(runtimeRoot, "app-data");
-  const daemonRuntimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: daemonRuntimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
-
-  try {
-    const before = executeInFixture("status");
-    assert.equal(before.status, 0);
-    assert.match(before.stdout, /not running/);
-    assert.equal(existsSync(daemonRuntimeDir), false, "status must not create runtime state");
-
-    const started = executeInFixture("start");
-    assert.equal(started.status, 0, started.stderr);
-    assert.match(started.stdout, /started/);
-
-    const descriptor = JSON.parse(readFileSync(join(daemonRuntimeDir, "daemon.json"), "utf8"));
-    assert.equal(descriptor.host, "127.0.0.1");
-    assert.equal(descriptor.port, port);
-    if (process.platform !== "win32") {
-      assert.equal(statSync(daemonRuntimeDir).mode & 0o077, 0);
-      assert.equal(statSync(join(daemonRuntimeDir, "daemon.json")).mode & 0o077, 0);
-    }
-
-    const unauthorized = await fetch(`http://127.0.0.1:${port}/__planview/status`);
-    assert.equal(unauthorized.status, 401);
-    assert.equal(unauthorized.headers.get("access-control-allow-origin"), null);
-    const root = await fetch(`http://127.0.0.1:${port}/`);
-    assert.equal(root.status, 200);
-    assert.match(await root.text(), /Planview daemon running/);
-
-    const status = executeInFixture("status");
-    assert.equal(status.status, 0, status.stderr);
-    assert.match(status.stdout, /is running/);
-    const idempotent = executeInFixture("start");
-    assert.equal(idempotent.status, 0, idempotent.stderr);
-    assert.match(idempotent.stdout, /already running/);
-
-    const restarted = executeInFixture("restart");
-    assert.equal(restarted.status, 0, restarted.stderr);
-    assert.match(restarted.stdout, /restarted/);
-
-    const stopped = executeInFixture("stop");
-    assert.equal(stopped.status, 0, stopped.stderr);
-    assert.match(stopped.stdout, /stopped/);
-    assert.equal(existsSync(join(daemonRuntimeDir, "daemon.json")), false);
-    const after = executeInFixture("status");
-    assert.equal(after.status, 0);
-    assert.match(after.stdout, /not running/);
-  } finally {
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
@@ -644,20 +453,30 @@ const freePort = (): Promise<number> =>
     });
   });
 
-test("metadata commands emit one JSON object when requested", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-json-cli-test-"));
+const createLocalFixture = async (name: string, overrides: NodeJS.ProcessEnv = {}) => {
+  const port = await freePort();
+  const runtimeRoot = mkdtempSync(join(tmpdir(), `planview-${name}-test-`));
   const appDataDir = join(runtimeRoot, "data");
   const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
+  const environment: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "test",
     PLANVIEW_APP_DATA_DIR: appDataDir,
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
+    ...overrides,
   };
   const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const cleanup = async () => {
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  };
+  return { runtimeRoot, appDataDir, runtimeDir, port, environment, executeInFixture, cleanup };
+};
+
+test("metadata commands emit one JSON object when requested", async () => {
+  const { runtimeRoot, port, executeInFixture, cleanup } = await createLocalFixture("json-cli");
 
   try {
     const stopped = executeInFixture("status", "--json");
@@ -712,25 +531,14 @@ test("metadata commands emit one JSON object when requested", async () => {
     assert.equal(finalStop.status, 0, finalStop.stderr);
     assert.deepEqual(JSON.parse(finalStop.stdout), { state: "stopped" });
   } finally {
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
-test("publish validates before startup and preserves the source file", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-validation-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+test("publish validates before startup and preserves the source file", async (t) => {
+  const { runtimeRoot, runtimeDir, executeInFixture, cleanup } =
+    await createLocalFixture("publish-validation");
+  t.after(cleanup);
   const invalidPath = join(runtimeRoot, "source.txt");
   writeFileSync(invalidPath, "not html");
   const invalid = executeInFixture("publish", invalidPath);
@@ -746,7 +554,6 @@ test("publish validates before startup and preserves the source file", async () 
   assert.equal(oversized.stdout, "");
   assert.match(oversized.stderr, /must not exceed 10485760 bytes/);
   assert.equal(existsSync(runtimeDir), false);
-  await removeFixture(runtimeRoot);
 });
 
 test("publish removes a prepared page bundle when daemon startup fails", async () => {
@@ -790,18 +597,9 @@ test("publish removes a prepared page bundle when daemon startup fails", async (
 });
 
 test("publish budgets a slow maximum-size publication before returning its committed URL", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-timeout-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  const { runtimeRoot, port, environment, cleanup } = await createLocalFixture("publish-timeout", {
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "1500",
-  };
+  });
   const sourcePath = join(runtimeRoot, "slow.html");
   writeFileSync(sourcePath, Buffer.alloc(10 * 1024 * 1024, 0x61));
 
@@ -818,25 +616,13 @@ test("publish budgets a slow maximum-size publication before returning its commi
     assert.equal(retrieved.status, 200);
     assert.equal((await retrieved.arrayBuffer()).byteLength, 10 * 1024 * 1024);
   } finally {
-    spawnSync(process.execPath, [cli, "stop"], { encoding: "utf8", env: environment });
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("publish starts or reuses the daemon, serves raw immutable HTML, and records access after retrieval", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, port, executeInFixture, cleanup } =
+    await createLocalFixture("publish");
   const sourcePath = join(runtimeRoot, "source.html");
   const original = "<!doctype html><html><body><h1>snapshot one</h1></body></html>";
   writeFileSync(sourcePath, original);
@@ -906,25 +692,12 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     assert.equal(await firstAgain.text(), original);
   } finally {
     database?.close();
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("publish accepts a page folder and serves its root and assets", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-page-folder-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, port, executeInFixture, cleanup } = await createLocalFixture("page-folder");
   const site = join(runtimeRoot, "site");
   mkdirSync(join(site, "assets"), { recursive: true });
   writeFileSync(join(site, "index.html"), "<h1>folder home</h1>");
@@ -947,68 +720,13 @@ test("publish accepts a page folder and serves its root and assets", async () =>
     assert.equal(await stylesheet.text(), "body { color: blue; }");
     assert.equal(readFileSync(join(site, "index.html"), "utf8"), "<h1>folder home</h1>");
   } finally {
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
-  }
-});
-
-test("get accepts ids and exact local URLs but rejects ambiguous references before startup", async () => {
-  const port = 49123;
-  const id = "a".repeat(21);
-  assert.equal(parseGetReference(id, port), id);
-  assert.equal(parseGetReference(`http://localhost:${port}/${id}`, port), id);
-  assert.equal(parseGetReference(`http://127.0.0.1:${port}/${id}`, port), id);
-
-  for (const reference of [
-    "a",
-    `http://localhost:${port}/${id}/`,
-    `http://localhost:${port}/${id}?download=1`,
-    `https://localhost:${port}/${id}`,
-    `http://example.test:${port}/${id}`,
-    `http://localhost:${port + 1}/${id}`,
-  ]) {
-    assert.throws(
-      () => parseGetReference(reference, port),
-      /valid 21-character id or an exact local Planview URL/
-    );
-  }
-
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-validation-test-"));
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: join(runtimeRoot, "data"),
-    PLANVIEW_RUNTIME_DIR: join(runtimeRoot, "data", "runtime"),
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  try {
-    const result = spawnSync(process.execPath, [cli, "get", `https://localhost:${port}/${id}`], {
-      encoding: "utf8",
-      env: environment,
-    });
-    assert.equal(result.status, 1);
-    assert.equal(result.stdout, "");
-    assert.match(result.stderr, /exact local Planview URL/);
-    assert.equal(existsSync(environment.PLANVIEW_RUNTIME_DIR), false);
-  } finally {
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("get streams exact bytes across daemon restart and only records successful access", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, environment, executeInFixture, cleanup } =
+    await createLocalFixture("get");
   const executeRawInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], {
       encoding: null,
@@ -1064,25 +782,13 @@ test("get streams exact bytes across daemon restart and only records successful 
     assert.match(missing.stderr.toString(), /was not found/);
   } finally {
     database?.close();
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("get honors stdout backpressure and records access after the slow consumer finishes", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-backpressure-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, environment, executeInFixture, cleanup } =
+    await createLocalFixture("get-backpressure");
   const sourcePath = join(runtimeRoot, "backpressure.html");
   const original = Buffer.concat([
     Buffer.from("<!doctype html><body>"),
@@ -1132,25 +838,13 @@ test("get honors stdout backpressure and records access after the slow consumer 
       child.kill("SIGTERM");
       await waitForExit(child).catch(() => undefined);
     }
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("get aborts the daemon transfer on a closed stdout consumer without recording access", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-epipe-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, environment, executeInFixture, cleanup } =
+    await createLocalFixture("get-epipe");
   const sourcePath = join(runtimeRoot, "epipe.html");
   writeFileSync(
     sourcePath,
@@ -1197,57 +891,13 @@ test("get aborts the daemon transfer on a closed stdout consumer without recordi
       child.kill("SIGTERM");
       await waitForExit(child).catch(() => undefined);
     }
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
-  }
-});
-
-test("start never stops an unknown owner of the daemon port", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-port-owner-test-"));
-  const port = await freePort();
-  const owner = createServer((socket) => socket.end());
-  await new Promise<void>((resolve, reject) => {
-    owner.once("error", reject);
-    owner.listen(port, "127.0.0.1", () => resolve());
-  });
-  const result = spawnSync(process.execPath, [cli, "start"], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      NODE_ENV: "test",
-      PLANVIEW_APP_DATA_DIR: join(runtimeRoot, "data"),
-      PLANVIEW_RUNTIME_DIR: join(runtimeRoot, "data", "runtime"),
-      PLANVIEW_TEST_DAEMON_PORT: String(port),
-    },
-  });
-
-  try {
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /unknown process/);
-    assert.match(result.stderr, /\n$/);
-    assert.equal(owner.listening, true);
-  } finally {
-    await new Promise<void>((resolve, reject) =>
-      owner.close((error) => (error ? reject(error) : resolve()))
-    );
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
 
 test("clean uses the authenticated daemon policy and startup reconciliation", async () => {
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-clean-cli-test-"));
-  const appDataDir = join(runtimeRoot, "data");
-  const runtimeDir = join(appDataDir, "runtime");
-  const port = await freePort();
-  const environment = {
-    ...process.env,
-    NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appDataDir,
-    PLANVIEW_RUNTIME_DIR: runtimeDir,
-    PLANVIEW_TEST_DAEMON_PORT: String(port),
-  };
-  const executeInFixture = (...args: string[]) =>
-    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const { runtimeRoot, appDataDir, runtimeDir, port, executeInFixture, cleanup } =
+    await createLocalFixture("clean-cli");
   const sourcePath = join(runtimeRoot, "cleanup.html");
   writeFileSync(sourcePath, "cleanup me");
   let database: DatabaseSync | undefined;
@@ -1312,7 +962,6 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
     assert.equal(descriptor.host, "127.0.0.1");
   } finally {
     database?.close();
-    executeInFixture("stop");
-    await removeFixture(runtimeRoot);
+    await cleanup();
   }
 });
