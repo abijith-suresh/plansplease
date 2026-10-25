@@ -24,7 +24,7 @@ The repository cloud app uses Convex for accounts and metadata and UploadThing
 for file storage. Hosting the app on your server alone does not replace those
 services. Hosted service availability is in the
 [features reference](../../reference/planned-features/).
-The [self-hosting proposal](https://github.com/abijith-suresh/planview/pull/129)
+The [self-hosting proposal](https://github.com/abijith-suresh/plansplease/pull/129)
 covers storage adapters, authentication, backups and upgrades.
 
 For contributor setup rather than a supported installation, see

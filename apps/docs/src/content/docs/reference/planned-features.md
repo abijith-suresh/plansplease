@@ -35,10 +35,10 @@ README for operators.
 
 ## Proposals and open work
 
-- [Unlisted sharing, #130](https://github.com/abijith-suresh/planview/pull/130): optional bearer links with rotation, revocation, and noindex. It is not available.
-- [Revisions, #123](https://github.com/abijith-suresh/planview/pull/123): define stable document identity, version URLs, and agent behavior before changing uploads.
-- [Self-hosting, #129](https://github.com/abijith-suresh/planview/pull/129): define supported installation, authentication, storage, persistence, and upgrade contracts.
-- [Naming and environments, #122](https://github.com/abijith-suresh/planview/pull/122): resolve repository/product naming and environment plans.
+- [Unlisted sharing, #130](https://github.com/abijith-suresh/plansplease/pull/130): optional bearer links with rotation, revocation, and noindex. It is not available.
+- [Revisions, #123](https://github.com/abijith-suresh/plansplease/pull/123): define stable document identity, version URLs, and agent behavior before changing uploads.
+- [Self-hosting, #129](https://github.com/abijith-suresh/plansplease/pull/129): define supported installation, authentication, storage, persistence, and upgrade contracts.
+- [Naming and environments, #122](https://github.com/abijith-suresh/plansplease/pull/122): resolve repository/product naming and environment plans.
 
 There is no supported home-server installation, private-storage migration,
 paid storage tier, anonymous share link, or automatic revision behavior.

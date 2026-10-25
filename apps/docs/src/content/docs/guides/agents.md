@@ -20,10 +20,10 @@ Planview's skills. From a project directory, the default installs them into that
 project:
 
 ```sh
-npx skills add https://github.com/abijith-suresh/planview/tree/main/apps/cli/skills
+npx skills add https://github.com/abijith-suresh/plansplease/tree/main/apps/cli/skills
 ```
 
-From a Planview checkout, use `npx skills add ./apps/cli/skills`. Add `-g` only
+From a plansplease checkout, use `npx skills add ./apps/cli/skills`. Add `-g` only
 for optional user-wide installation across projects. Select an agent with
 `-a codex` (or another supported agent); add `-y` to skip prompts.
 
