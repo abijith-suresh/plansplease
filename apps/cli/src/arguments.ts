@@ -20,6 +20,7 @@ type ParsedArguments = Readonly<{
   readonly json: boolean;
   readonly open: boolean;
   readonly cloudUrl?: string;
+  readonly named?: Readonly<Record<string, string>>;
   readonly operands: readonly string[];
 }>;
 
@@ -29,6 +30,7 @@ type ParsedGlobalArguments = Readonly<{
 }>;
 
 type OptionParserOptions = Readonly<{
+  readonly valueOptions?: readonly string[];
   readonly allowCloudUrl?: boolean;
   readonly allowJson?: boolean;
   readonly allowOpen?: boolean;
@@ -66,6 +68,7 @@ export const parseOptions = (
   let open = false;
   let cloudUrl: string | undefined;
   const operands: string[] = [];
+  const named: Record<string, string> = {};
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -94,6 +97,29 @@ export const parseOptions = (
         return Effect.fail(unknownOption(argument, options.helpTopic));
       }
       open = true;
+      continue;
+    }
+
+    const optionName = argument.split("=")[0] ?? argument;
+    if (!optionsEnded && options.valueOptions?.includes(optionName)) {
+      const hasEquals = argument.includes("=");
+      const value = hasEquals ? argument.slice(optionName.length + 1) : args[index + 1];
+      if (
+        value === undefined ||
+        value.length === 0 ||
+        (!hasEquals && value.startsWith("--")) ||
+        named[optionName] !== undefined
+      ) {
+        return Effect.fail(
+          invalidOptionValue(
+            optionName,
+            value,
+            `Option ${optionName} requires one value and cannot be repeated.`
+          )
+        );
+      }
+      named[optionName] = value;
+      if (!hasEquals) index += 1;
       continue;
     }
 
@@ -143,6 +169,7 @@ export const parseOptions = (
     json,
     open,
     ...(cloudUrl === undefined ? {} : { cloudUrl }),
+    ...(Object.keys(named).length === 0 ? {} : { named }),
     operands,
   });
 };

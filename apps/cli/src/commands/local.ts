@@ -18,7 +18,10 @@ import {
   type StdoutWriter,
 } from "../output.js";
 
-type DaemonCommand = Exclude<Command, "publish" | "upload" | "login" | "logout" | "get" | "help">;
+type DaemonCommand = Exclude<
+  Command,
+  "publish" | "upload" | "login" | "logout" | "get" | "help" | "list" | "usage" | "delete"
+>;
 
 type OpenUrl = (url: string) => Promise<void>;
 
@@ -220,5 +223,91 @@ export const runDaemonCommandFromArgs = (
         );
       }
       return runDaemonCommand(commandName, application, parsed.json ? "json" : "text", stdout);
+    })
+  );
+
+export const runInventoryCommand = (
+  command: "list" | "usage" | "delete",
+  application: LocalApplication,
+  args: readonly string[],
+  stdout: StdoutWriter
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, {
+    allowJson: true,
+    helpTopic: command,
+    valueOptions:
+      command === "list" ? ["--limit", "--after"] : command === "delete" ? ["--generation"] : [],
+    allowLeadingHyphenOperand: (argument) => command === "delete" && isValidDocumentId(argument),
+  }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, command);
+      if (
+        parsed.operands.length !== (command === "delete" ? 1 : 0) ||
+        (command === "delete" && parsed.named?.["--generation"] === undefined)
+      ) {
+        return Effect.fail(
+          unexpectedArguments(
+            parsed.operands,
+            `Expected ${command === "delete" ? "one id and --generation" : "no operands"}.\n\n${formatHelp(command)}`
+          )
+        );
+      }
+      const format: OutputFormat = parsed.json ? "json" : "text";
+      return Effect.gen(function* () {
+        if (command === "list") {
+          const limit = parsed.named?.["--limit"];
+          const after = parsed.named?.["--after"];
+          const result = yield* application.list({
+            ...(limit === undefined ? {} : { limit: Number(limit) }),
+            ...(after === undefined ? {} : { after }),
+          });
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (page) =>
+              page.snapshots
+                .map(
+                  (row) =>
+                    `${row.id} ${row.generation} ${row.size} bytes expiresAt=${row.expiresAt}\n`
+                )
+                .join("") +
+              (page.nextAfter === undefined ? "" : `Continue with --after ${page.nextAfter}\n`)
+          );
+          return 0;
+        }
+        if (command === "usage") {
+          const result = yield* application.usage();
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (usage) =>
+              `${usage.documentCount} snapshots, ${usage.bytes}/${usage.quotaBytes} logical bytes (${usage.documentBytes} document + ${usage.metadataBytes} metadata). Retention: ${usage.retentionMilliseconds / 86400000} days since last access.\n`
+          );
+          return 0;
+        }
+        const result = yield* application.deleteSnapshot({
+          id: parsed.operands[0] ?? "",
+          generation: parsed.named?.["--generation"] ?? "",
+        });
+        yield* writeCommandResult(
+          stdout,
+          format,
+          result,
+          (deletion) =>
+            `${deletion.id}: ${deletion.status}. Recovery: ${deletion.recovery}.${deletion.message === undefined ? "" : ` ${deletion.message}`}\n`
+        );
+        return result.status === "deleted" || result.status === "not_found" ? 0 : 1;
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DaemonCommandError({
+              command,
+              cause,
+              message: `Could not ${command} local snapshots: ${describe(cause)}`,
+            })
+        )
+      );
     })
   );

@@ -17,3 +17,12 @@ random secret. Windows privacy is not enforced by Node mode bits: users must
 provision an account-owned app-data directory that other users cannot write.
 Planview claims loopback binding and authenticated lifecycle requests, not
 Windows ACL enforcement against a hostile local user.
+
+
+Authenticated snapshot inventory, logical usage and selected-generation deletion
+use the same storage owner as publication and cleanup. Inventory does not extend
+retention. Selected deletion enters the shared mutation gate and preserves active
+read leases. CLI clients use bounded HTTP results and never open SQLite to query
+inventory or estimate timeouts. These internal endpoints use the native daemon
+secret; browser management sessions and a separate management origin are a later
+phase. No local MCP endpoint is provided.

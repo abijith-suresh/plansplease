@@ -965,3 +965,95 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
     await cleanup();
   }
 });
+
+test("inventory CLI validates input before starting and deletes only a listed generation", async () => {
+  const { runtimeRoot, runtimeDir, port, executeInFixture, cleanup } =
+    await createLocalFixture("inventory-cli");
+  try {
+    for (const args of [
+      ["list", "--limit", "101"],
+      ["list", "--limit", "0"],
+      ["list", "--after", "bad"],
+      ["list", "--limit", "1", "--limit", "2"],
+      ["delete", "a".repeat(21)],
+      ["delete", "a".repeat(21), "--generation", "invalid"],
+      ["usage", "extra"],
+      ["usage", "--open"],
+    ]) {
+      const result = executeInFixture(...args, "--json");
+      assert.equal(result.status, 1, JSON.stringify(args));
+      assert.equal(result.stdout, "");
+      assert.ok(JSON.parse(result.stderr).error);
+      assert.equal(existsSync(join(runtimeDir, "daemon.json")), false);
+    }
+    const sourcePath = join(runtimeRoot, "inventory.html");
+    const original = Buffer.from("\ufeff<main>é snapshot</main>\r\n");
+    writeFileSync(sourcePath, original);
+    const published = executeInFixture("publish", sourcePath, "--json");
+    assert.equal(published.status, 0, published.stderr);
+    const { id } = JSON.parse(published.stdout);
+    const listed = executeInFixture("list", "--limit=1", "--json");
+    assert.equal(listed.status, 0, listed.stderr);
+    const { snapshots } = JSON.parse(listed.stdout);
+    assert.equal(snapshots.length, 1);
+    assert.equal(snapshots[0].id, id);
+    assert.equal(snapshots[0].size, original.byteLength);
+    const secondRead = executeInFixture("get", id);
+    assert.equal(secondRead.status, 0, secondRead.stderr);
+    assert.equal(secondRead.stdout, original.toString("utf8"));
+    const usage = executeInFixture("usage", "--json");
+    assert.equal(usage.status, 0, usage.stderr);
+    assert.equal(JSON.parse(usage.stdout).bytes, original.byteLength + 4096);
+    for (const path of ["snapshots", "usage", "delete"]) {
+      const response = await fetch(`http://127.0.0.1:${port}/__planview/${path}`, {
+        method: path === "delete" ? "POST" : "GET",
+      });
+      assert.equal(response.status, 401);
+    }
+    const { secret } = JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8"));
+    for (const query of ["limit=101", "limit=0", "after=bad", "limit=1&limit=2", "unexpected=1"]) {
+      const response = await fetch(`http://127.0.0.1:${port}/__planview/snapshots?${query}`, {
+        headers: { "x-planview-secret": secret },
+      });
+      assert.equal(response.status, 400);
+    }
+    for (const body of [
+      "not JSON",
+      JSON.stringify({ id }),
+      JSON.stringify({ id, generation: snapshots[0].generation, extra: true }),
+      "x".repeat(17 * 1024),
+    ]) {
+      const response = await fetch(`http://127.0.0.1:${port}/__planview/delete`, {
+        method: "POST",
+        headers: { "x-planview-secret": secret, "content-type": "application/json" },
+        body,
+      });
+      assert.equal(response.status, 400);
+    }
+    assert.equal(executeInFixture("get", id).status, 0);
+    const stale = executeInFixture(
+      "delete",
+      id,
+      "--generation",
+      "00000000-0000-0000-0000-000000000000",
+      "--json"
+    );
+    assert.equal(stale.status, 1, stale.stderr);
+    assert.equal(JSON.parse(stale.stdout).status, "stale");
+    assert.equal(executeInFixture("get", id).status, 0);
+    const deleted = executeInFixture(
+      "delete",
+      id,
+      "--generation",
+      snapshots[0].generation,
+      "--json"
+    );
+    assert.equal(deleted.status, 0, deleted.stderr);
+    assert.equal(JSON.parse(deleted.stdout).status, "deleted");
+    assert.equal(executeInFixture("get", id).status, 1);
+    assert.deepEqual(JSON.parse(executeInFixture("list", "--json").stdout), { snapshots: [] });
+    assert.equal(JSON.parse(executeInFixture("usage", "--json").stdout).bytes, 0);
+  } finally {
+    await cleanup();
+  }
+});

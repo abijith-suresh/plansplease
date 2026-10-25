@@ -1,5 +1,8 @@
 import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import {
+  listDaemonSnapshots,
+  getDaemonStorageUsage,
+  deleteDaemonSnapshot,
   cleanDaemon,
   type DaemonConfig,
   type DaemonError,
@@ -12,12 +15,29 @@ import {
   startDetachedDaemon,
   stopDaemon,
 } from "@planview/daemon";
-import type { DocumentCleanupResult } from "@planview/storage";
+import type {
+  SnapshotListOptions,
+  SnapshotSelection,
+  SnapshotInventory,
+  SnapshotUsage,
+  SnapshotDeleteResult,
+  DocumentCleanupResult,
+} from "@planview/storage";
 import { Data, Effect } from "effect";
 import { preparePublishSource } from "./publish-source.js";
 import { parseDocumentReferenceDetails } from "./reference.js";
 
-export type LocalOperation = "publish" | "get" | "start" | "stop" | "restart" | "inspect" | "clean";
+export type LocalOperation =
+  | "publish"
+  | "get"
+  | "start"
+  | "stop"
+  | "restart"
+  | "inspect"
+  | "clean"
+  | "list"
+  | "usage"
+  | "delete";
 
 export class LocalApplicationError extends Data.TaggedError("LocalApplicationError")<{
   readonly operation: LocalOperation;
@@ -60,6 +80,13 @@ export type LocalGetOptions = Readonly<{
 }>;
 
 export type LocalApplication = Readonly<{
+  readonly list: (
+    options?: SnapshotListOptions
+  ) => Effect.Effect<SnapshotInventory, LocalApplicationFailure>;
+  readonly usage: () => Effect.Effect<SnapshotUsage, LocalApplicationFailure>;
+  readonly deleteSnapshot: (
+    selection: SnapshotSelection
+  ) => Effect.Effect<SnapshotDeleteResult, LocalApplicationFailure>;
   readonly publish: (
     sourcePath: string
   ) => Effect.Effect<LocalPublishedDocument, LocalApplicationFailure>;
@@ -220,7 +247,17 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
     );
   });
 
-  return { publish, get, start, stop, restart, inspect, clean };
+  const list = (input: SnapshotListOptions = {}) =>
+    withConfig("list", resolveConfig, (config) =>
+      listDaemonSnapshots(config, daemonOptions, input)
+    );
+  const usage = () =>
+    withConfig("usage", resolveConfig, (config) => getDaemonStorageUsage(config, daemonOptions));
+  const deleteSnapshot = (input: SnapshotSelection) =>
+    withConfig("delete", resolveConfig, (config) =>
+      deleteDaemonSnapshot(config, daemonOptions, input)
+    );
+  return { publish, get, start, stop, restart, inspect, clean, list, usage, deleteSnapshot };
 };
 
 export {
@@ -234,3 +271,11 @@ export {
   parseDocumentReferenceDetails,
 } from "./reference.js";
 export { preparePublishSource };
+
+export type {
+  SnapshotListOptions,
+  SnapshotSelection,
+  SnapshotInventory,
+  SnapshotUsage,
+  SnapshotDeleteResult,
+} from "@planview/storage";

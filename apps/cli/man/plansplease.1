@@ -81,6 +81,21 @@ Restart the local daemon.
 .B clean [options]
 Remove expired snapshots and reconcile incomplete storage operations.
 .TP
+.B list [--limit 1..100] [--after id] [--json]
+List an ID-ordered page of local snapshots, including immutable generations and
+expiry timestamps, without extending retention. Default limit is 50.
+.TP
+.B usage [--json]
+Show committed document bytes plus 4 KiB metadata per snapshot, the 1 GiB quota,
+and 30-day last-access retention. This is logical storage, not physical disk use.
+.TP
+.B delete id --generation value [--json]
+Delete a selected local snapshot generation from list. Active reads retain it;
+stale generations cannot delete replacements. Cloud copies are independent.
+Partial failures require clean for bounded reconciliation, possibly after the
+orphan recovery grace period. Deletion exits 1 for stale, retained or partial;
+missing metadata returns not_found and exit 0 without claiming residual files are gone.
+.TP
 .B help [command]
 Show help for the whole CLI or for one command.
 .SH AGENT SKILLS
@@ -142,6 +157,12 @@ and
 .B clean
 ,
 .B upload
+,
+.B list
+,
+.B usage
+, and
+.B delete
 .
 .TP
 .B \-\-

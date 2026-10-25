@@ -86,3 +86,43 @@ Use `npx skills add ./apps/cli/skills` from a plansplease checkout. Vercel Skill
 CLI installs into the current project by default; add `-g` for optional
 user-wide installation across projects, and `-a codex -y` for a non-interactive
 Codex installation.
+
+## Inventory and selected deletion
+
+```sh
+plansplease list --limit 50 --json
+plansplease list --after <nextAfter> --limit 50 --json
+plansplease usage --json
+plansplease delete <id> --generation <generation-from-list> --json
+```
+
+These commands start or reuse the selected profile's daemon, including startup
+cleanup. After updating the installed CLI, restart the selected profile daemon
+to load its new operations. Inventory reads at most 100 metadata rows per page, ordered by ID.
+`nextAfter` is omitted on the final page. Pages reflect current metadata, so a
+concurrent publication before the cursor appears on a fresh traversal. Listing
+and usage never extend retention. Each row includes `createdAt`, `lastAccessedAt`,
+`size`, immutable `generation`, and `expiresAt` as epoch milliseconds. Expiry is
+30 days after last access; cleanup removes rows strictly older than that boundary.
+A successful document read can move expiry later.
+
+`usage` reports logical committed bytes, split into document bytes and a fixed
+4 KiB metadata charge per snapshot, plus the 1 GiB quota and retention period.
+It does not measure physical disk use, SQLite allocation, staging, or orphan files.
+
+Deletion requires the ID and generation from inventory. It never deletes cloud
+copies. An active read retains both the metadata and file; retry after the read
+finishes. A stale selection returns `stale`; list again before selecting a new
+generation. Deletion can also return `deleted`, `not_found`, `retained`, or
+`partial`. Only `deleted` and `not_found` exit with status 0. Removal flags describe
+confirmed changes; `fileState` can be `unknown` after a storage failure.
+
+A failure after metadata removal can leave an invisible orphan file. The result
+reports `partial` and `recovery: "clean"`; run `plansplease clean` to resume the
+existing bounded reconciliation. Fresh orphan files stay until the recovery grace
+period passes. Reconciliation also runs after daemon restart. A metadata commit
+whose acknowledgement fails is partial unless a read proves the selected
+generation is still retained; then retry the selection. `recovery: "inspect"`
+means the metadata state could not be established; list again before choosing
+any retry. No automatic retry or cloud deletion occurs. If a response is lost, list again and use cleanup
+for residual storage; never substitute a different generation in a blind retry.

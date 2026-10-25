@@ -9,6 +9,9 @@ export const COMMANDS = [
   "stop",
   "restart",
   "clean",
+  "list",
+  "usage",
+  "delete",
   "help",
 ] as const;
 
@@ -27,6 +30,9 @@ Commands:
   status                 Show daemon status without starting it
   stop                   Gracefully stop the local daemon
   restart                Restart the local daemon
+  list                   List local snapshots in bounded pages
+  usage                  Show logical storage usage and retention
+  delete <id>            Delete one listed snapshot generation
   clean                  Remove expired snapshots and reconcile storage
   help [command]         Show help for a command
 
@@ -133,6 +139,39 @@ Remove expired snapshots and reconcile incomplete storage operations.
 Options:
   -h, --help             Show this help message
   --json                 Print the cleanup result as one JSON object
+`,
+  list: `Usage: plansplease list [options]
+
+List local snapshots in id order without refreshing retention.
+Starts or reuses the selected profile's daemon, including startup cleanup.
+
+Options:
+  -h, --help             Show this help message
+  --json                 Print snapshots and optional nextAfter as one JSON object
+  --limit <1..100>        Maximum snapshots in the page (default: 50)
+  --after <id>           Continue after the last id of the previous page
+`,
+  usage: `Usage: plansplease usage [options]
+
+Show committed document bytes plus 4 KiB metadata per snapshot, the 1 GiB quota,
+and 30-day last-access retention. This is logical usage, not physical disk use.
+Starts or reuses the selected profile's daemon, including startup cleanup.
+
+Options:
+  -h, --help             Show this help message
+  --json                 Print usage as one JSON object
+`,
+  delete: `Usage: plansplease delete [options] <id> --generation <generation>
+
+Delete one local immutable snapshot selected from list. Cloud copies are independent.
+Active reads retain the snapshot. Stale selections never delete a replacement.
+Partial file removal reports recovery=clean; run plansplease clean for reconciliation.
+Exit 1 means stale, retained, or partial. A missing snapshot returns exit 0.
+
+Options:
+  -h, --help             Show this help message
+  --generation <value>   Immutable generation printed by list (required)
+  --json                 Print status, removal flags, file state and recovery
 `,
   help: `Usage: plansplease help [command]
 

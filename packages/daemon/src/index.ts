@@ -22,12 +22,16 @@ import {
   validateDocumentId,
 } from "@planview/core";
 import {
+  createSnapshotManagement,
+  validateSnapshotListOptions,
+  validateSnapshotSelection,
+  type SnapshotListOptions,
+  type SnapshotSelection,
   createDocumentCleanupCoordinator,
   createDocumentPublicationCoordinator,
   type DocumentCleanupFailure,
   type DocumentCleanupResult,
   openDocumentFileStoreScoped,
-  openStorage,
   openStorageScoped,
 } from "@planview/storage";
 import { Data, Effect, Exit, Scope } from "effect";
@@ -56,6 +60,9 @@ import { createDaemonHttpServer, type DaemonHttpServer } from "./http-server.js"
 import {
   createDaemonHttpRequestHandler,
   DAEMON_CLEAN_PATH,
+  DAEMON_INVENTORY_PATH,
+  DAEMON_USAGE_PATH,
+  DAEMON_DELETE_PATH,
   DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS,
   DAEMON_DOCUMENT_READ_MAX_DURATION_MS,
   DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS,
@@ -70,10 +77,18 @@ import {
   writeDaemonHttpResponse,
   type DaemonStatusPayload,
 } from "./http-routes.js";
+import {
+  inventoryFromPayload,
+  usageFromPayload,
+  deletionFromPayload,
+} from "./snapshot-response.js";
 import { createOperationGate } from "./operation-gate.js";
 
 export {
   DAEMON_CLEAN_PATH,
+  DAEMON_INVENTORY_PATH,
+  DAEMON_USAGE_PATH,
+  DAEMON_DELETE_PATH,
   DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS,
   DAEMON_DOCUMENT_READ_MAX_DURATION_MS,
   DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS,
@@ -120,8 +135,6 @@ const PRIVATE_FILE_MODE = 0o600;
 const REQUEST_TIMEOUT_MS = 1_000;
 export const DAEMON_CLEANUP_TIMEOUT_MIN_MS = 10_000;
 export const DAEMON_CLEANUP_TIMEOUT_MAX_MS = 60_000;
-const CLEANUP_DOCUMENT_BUDGET_MS = 20;
-const CLEANUP_BYTE_BUDGET_BYTES_PER_MS = 128 * 1024;
 // Publication is a synchronous request: the 201 response is sent only after
 // the immutable file and metadata row have both committed. Give the largest
 // allowed source a bounded timeout based on a conservative copy rate rather
@@ -1006,6 +1019,10 @@ const openDaemon = async (config: DaemonConfig) => {
         publicationCoordinator,
         metadataStore: openedMetadataStore,
         runCleanup,
+        snapshotManagement: createSnapshotManagement({
+          metadataStore: openedMetadataStore,
+          documentFileStore: openedDocumentFileStore,
+        }),
         isReady: () => startupReady,
         documentReadAdmission,
         operationGate,
@@ -1213,7 +1230,8 @@ const request = (
   path: string,
   body?: string,
   timeoutMs = REQUEST_TIMEOUT_MS,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  maxResponseBytes = Number.MAX_SAFE_INTEGER
 ) =>
   new Promise<DaemonResponse>((resolvePromise, rejectPromise) => {
     let responseObject: import("node:http").IncomingMessage | undefined;
@@ -1256,7 +1274,17 @@ const request = (
       (res) => {
         responseObject = res;
         const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        let bytes = 0;
+        res.on("data", (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > maxResponseBytes) {
+            const cause = new Error("The daemon metadata response exceeded its byte limit.");
+            res.destroy(cause);
+            reject(cause);
+            return;
+          }
+          chunks.push(chunk);
+        });
         res.on("end", () => {
           resolve({
             statusCode: res.statusCode ?? 0,
@@ -1526,35 +1554,6 @@ const inspectDaemonPromise = async (
   }
 };
 
-const cleanupTimeoutFor = (count: number, size: number) => {
-  const documentBudget = count * CLEANUP_DOCUMENT_BUDGET_MS;
-  const byteBudget = Math.ceil(size / CLEANUP_BYTE_BUDGET_BYTES_PER_MS);
-  return Math.min(
-    DAEMON_CLEANUP_TIMEOUT_MAX_MS,
-    Math.max(
-      DAEMON_CLEANUP_TIMEOUT_MIN_MS,
-      DAEMON_CLEANUP_TIMEOUT_MIN_MS + documentBudget + byteBudget
-    )
-  );
-};
-
-const estimateCleanupTimeout = (config: DaemonConfig) => {
-  try {
-    const metadataStore = Effect.runSync(openStorage(join(config.appDataDir, "metadata.sqlite")));
-    try {
-      const aggregate = metadataStore.getDocumentAggregate();
-      return cleanupTimeoutFor(aggregate.count, aggregate.size);
-    } finally {
-      metadataStore.close();
-    }
-  } catch {
-    // Startup can still create/migrate the database. If its size cannot be
-    // sampled, use the bounded maximum rather than making readiness timing
-    // depend on an unobserved, and therefore ambiguous, estimate.
-    return DAEMON_CLEANUP_TIMEOUT_MAX_MS;
-  }
-};
-
 const waitForReady = async (
   config: DaemonConfig,
   timeoutMs = STARTUP_TIMEOUT_MS,
@@ -1738,7 +1737,7 @@ const startDetachedDaemonPromise = async (
   signal?: AbortSignal
 ) => {
   const paths = await prepareLifecyclePaths(config);
-  const startupTimeoutMs = estimateCleanupTimeout(config);
+  const startupTimeoutMs = DAEMON_CLEANUP_TIMEOUT_MAX_MS;
   const lock = await createLock(paths);
   try {
     return await startWithLock(config, options, paths, lock, startupTimeoutMs, signal);
@@ -1845,7 +1844,7 @@ const cleanDaemonPromise = async (
   signal?: AbortSignal
 ) => {
   const running = await startDetachedDaemonPromise(config, options, signal);
-  const payload = await requestClean(running.descriptor, estimateCleanupTimeout(config), signal);
+  const payload = await requestClean(running.descriptor, DAEMON_CLEANUP_TIMEOUT_MAX_MS, signal);
   return {
     descriptor: running.descriptor,
     reused: running.reused,
@@ -1928,14 +1927,7 @@ const restartDaemonPromise = async (
   const lock = await createLock(paths);
   try {
     await stopWithLock(config, signal);
-    return await startWithLock(
-      config,
-      options,
-      paths,
-      lock,
-      estimateCleanupTimeout(config),
-      signal
-    );
+    return await startWithLock(config, options, paths, lock, DAEMON_CLEANUP_TIMEOUT_MAX_MS, signal);
   } finally {
     await lock.release();
   }
@@ -2007,3 +1999,63 @@ export const stopDaemon = (config: DaemonConfig) =>
 
 export const restartDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
   daemonEffect(DAEMON_READY_PATH, (signal) => restartDaemonPromise(config, options, signal));
+
+const snapshotRequest = async <A>(
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  path: string,
+  parse: (payload: unknown) => A,
+  signal: AbortSignal,
+  body?: string
+) => {
+  const running = await startDetachedDaemonPromise(config, options, signal);
+  const answer = await request(
+    running.descriptor,
+    body === undefined ? "GET" : "POST",
+    path,
+    body,
+    path === DAEMON_DELETE_PATH ? DAEMON_CLEANUP_TIMEOUT_MAX_MS : REQUEST_TIMEOUT_MS,
+    signal,
+    128 * 1024
+  );
+  return parse(parseResponse<unknown>(answer, path, 200));
+};
+export const listDaemonSnapshots = (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  input: SnapshotListOptions = {}
+) =>
+  daemonEffect(DAEMON_INVENTORY_PATH, (signal) => {
+    const validated = validateSnapshotListOptions(input);
+    const query = new URLSearchParams({
+      limit: String(validated.limit),
+      ...(validated.after === undefined ? {} : { after: validated.after }),
+    });
+    return snapshotRequest(
+      config,
+      options,
+      `${DAEMON_INVENTORY_PATH}?${query}`,
+      inventoryFromPayload,
+      signal
+    );
+  });
+export const getDaemonStorageUsage = (config: DaemonConfig, options: StartDaemonOptions) =>
+  daemonEffect(DAEMON_USAGE_PATH, (signal) =>
+    snapshotRequest(config, options, DAEMON_USAGE_PATH, usageFromPayload, signal)
+  );
+export const deleteDaemonSnapshot = (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  input: SnapshotSelection
+) =>
+  daemonEffect(DAEMON_DELETE_PATH, (signal) => {
+    const selection = validateSnapshotSelection(input);
+    return snapshotRequest(
+      config,
+      options,
+      DAEMON_DELETE_PATH,
+      deletionFromPayload,
+      signal,
+      JSON.stringify(selection)
+    );
+  });

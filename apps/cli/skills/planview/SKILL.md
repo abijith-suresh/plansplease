@@ -98,3 +98,14 @@ a revised upload, and identify both documents clearly in your response.
   sources or unvalidated shell substitutions.
 - Errors go to stderr; successful results go to stdout. Commands supporting
   `--json` emit one JSON value. Check exit status before presenting success.
+
+
+Local inventory is available with `plansplease list --limit 50 --json`; follow
+`nextAfter` with `--after` for the next bounded page. Listing does not extend
+retention. `plansplease usage --json` reports logical committed storage and quota,
+not physical disk use. Both commands start or reuse the selected profile daemon.
+For an explicitly requested local deletion, use `plansplease delete ID
+--generation GENERATION --json` with the generation returned by list. Active
+reads return retained; stale generations require a fresh selection. Partial
+outcomes report `recovery: "clean"` and require bounded reconciliation, possibly
+after the orphan grace period. Local deletion never deletes a cloud copy.

@@ -97,6 +97,21 @@ test("local application publishes, retrieves, cleans, restarts, and stops", asyn
       assert.equal(inspected.port, port);
     }
 
+    const inventory = await Effect.runPromise(application.list({ limit: 1 }));
+    assert.equal(inventory.snapshots.length, 1);
+    const selected = inventory.snapshots[0]!;
+    assert.equal(selected.id, published.id);
+    const usage = await Effect.runPromise(application.usage());
+    assert.equal(usage.documentCount, 1);
+    assert.equal(usage.documentBytes, Buffer.byteLength(source));
+    assert.equal(usage.bytes, Buffer.byteLength(source) + 4096);
+    assert.deepEqual(await Effect.runPromise(application.list()), inventory);
+    assert.equal((await Effect.runPromise(application.deleteSnapshot(selected))).status, "deleted");
+    await assert.rejects(
+      Effect.runPromise(application.get({ reference: published.id, onChunk: () => undefined }))
+    );
+    assert.equal((await Effect.runPromise(application.usage())).bytes, 0);
+
     const cleaned = await Effect.runPromise(application.clean());
     assert.equal(cleaned.failures.length, 0);
 
