@@ -24,8 +24,9 @@ locally with `npm run local`:
 - CLI folder uploads and MCP bundle tools, including relative asset previews.
 - Cloud account quotas and provider-backed storage with deferred cleanup.
 - Optional [account/origin-scoped upload operation receipts](../upload-operations/)
-  with exact-byte fingerprints and server-side replay protection. CLI sharing
-  and automatic synchronization are not included.
+  with exact-byte fingerprints and server-side replay protection.
+- Explicit `share LOCAL_ID` using immutable daemon bytes and durable scoped local
+  attempts. No automatic retry/synchronization or permanent offline-retention promise.
 
 Hosted use of these features requires running compatible app and Convex releases.
 Bundle previews pass through the app with a bounded cache and consume app

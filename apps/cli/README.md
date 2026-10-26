@@ -158,12 +158,10 @@ The cloud app, hosted MCP, cloud uploads and cloud deletions remain separate.
 
 ## Cloud uploads
 
-`upload PATH` remains an explicit cloud-only operation. The server has an opt-in
-[operation receipt protocol](../docs/src/content/docs/reference/upload-operations.md)
-for future local-first sharing; the CLI does not silently enable it or retry
-uploads. No `share LOCAL_ID` command is available yet. Local and cloud documents
-and deletion remain independent. Local 10 MiB snapshots can exceed the cloud
-8 MiB limit; local 30-day/1 GiB policy does not promise permanent offline retention.
+`upload PATH` remains an explicit cloud-only operation. To share an existing local
+snapshot, use `share LOCAL_ID` as documented below. Publish never uploads or syncs.
+Local and cloud deletion are independent. Local 10 MiB snapshots can exceed the
+cloud 8 MiB limit; local 30-day/1 GiB policy does not promise permanent offline retention.
 
 
 Hosted services are currently offline; see the
@@ -254,3 +252,60 @@ Rerun the command to replace existing copies.
 
 The build bundles the private local-runtime packages into `dist`. The installed
 CLI and its declarations do not depend on private `@planview/*` packages.
+
+
+## Share a local snapshot
+
+```sh
+plansplease publish --json ./artifact/
+plansplease share --json LOCAL_ID
+plansplease share --inspect --json LOCAL_ID
+plansplease share --operation OPERATION_KEY --json LOCAL_ID
+```
+
+Share uses the selected profile's existing cloud credential without opening
+browser sign-in. `--open` explicitly opens a confirmed cloud link. The command
+checks the authenticated account and receipt-protocol capability before admission;
+older servers fail closed. It does not fall back to legacy unkeyed upload.
+
+The daemon reads the committed immutable snapshot once under its read lease and
+mutation gate, preserving its local ID, generation, encoded bytes and SHA-256.
+Folders use the existing encoded bundle, including supported binary assets,
+without rereading the original folder or encoding it again. A private SQLite v3
+attempt records account, origin, key and fingerprint before the CLI can receive
+upload bytes. No credential is stored in attempts. Older binaries refuse v3
+storage; stop the daemon before changing installations and use a compatible build.
+
+Only the first invocation receives bytes for admission. Concurrent or repeated
+invocations use the existing key. Unknown/pending operations perform authenticated
+receipt lookup only, including after daemon restart or local deletion. A missing
+receipt is not proof that an earlier admission cannot commit. Never replace an
+unknown key or manually resend it. If a local prepare acknowledgement is lost,
+inspect this ID's stored attempts and run share again. No background retry runs.
+
+JSON stdout contains separate `local`, `cloud`, `bookkeeping` and `recovery`
+fields. Cloud `committed` includes the account/origin/document identity and verified
+receipt. Cloud `failed` can mean local size/format refusal, verified terminal
+server failure, or preflight refusal before this invocation starts admission;
+preflight refusal leaves previous operations unchanged. `unknown` means no final
+outcome is proven. A known cloud commit can have `bookkeeping: "unknown"` if the
+local receipt write could not be confirmed; keep its key and recover by lookup.
+Exit 0 means committed and locally recorded; exit 1 covers failure or uncertainty.
+No snapshot bytes or credential are printed. Help performs no daemon/cloud work.
+`--inspect` is local-only, starts/reuses the daemon because it owns metadata, and
+returns the 20 newest attempts with `hasMore`; `--operation` selects an older key.
+
+After a proven terminal failure, `share --new-attempt LOCAL_ID` deliberately
+allocates a new key in the same current account/origin. It is refused for unknown
+or committed operations. Old attempts remain inspectable. Switching accounts or
+origins creates a separate scope; recovering a named operation requires its original
+account and origin. Revoked credentials cannot recover or admit uploads.
+
+Snapshots above 8 MiB remain local, with `CLOUD_SIZE_LIMIT` and no provider upload.
+Local bundle types unsupported by the cloud similarly report `CLOUD_FORMAT_REFUSED`.
+The local URL and expiry remain visible. Sharing does not refresh access retention,
+pin a snapshot, protect it from explicit deletion, or promise permanent offline
+copies. Receipt history survives local/cloud deletion and does not recreate bytes.
+There is a fixed 10,000-attempt/profile metadata cap with no silent eviction;
+receipt metadata is outside the logical document-byte quota. Reconciliation of
+uncertain provider ingestion and attempt compaction remain manual/operator work.

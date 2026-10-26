@@ -30,6 +30,7 @@ type ParsedGlobalArguments = Readonly<{
 }>;
 
 type OptionParserOptions = Readonly<{
+  readonly flagOptions?: readonly string[];
   readonly valueOptions?: readonly string[];
   readonly allowCloudUrl?: boolean;
   readonly allowJson?: boolean;
@@ -100,6 +101,14 @@ export const parseOptions = (
       continue;
     }
 
+    if (!optionsEnded && options.flagOptions?.includes(argument)) {
+      if (named[argument] !== undefined)
+        return Effect.fail(
+          invalidOptionValue(argument, undefined, `Option ${argument} cannot be repeated.`)
+        );
+      named[argument] = "true";
+      continue;
+    }
     const optionName = argument.split("=")[0] ?? argument;
     if (!optionsEnded && options.valueOptions?.includes(optionName)) {
       const hasEquals = argument.includes("=");

@@ -224,3 +224,16 @@ plansplease help publish
 .SH SEE ALSO
 .BR npm (1),
 .BR man (1)
+
+.SH SHARING A LOCAL SNAPSHOT
+.B plansplease share [--json] [--open] LOCAL_ID
+uploads the existing daemon-owned immutable bytes with a durable account/origin
+operation key. Publish remains local-only; legacy upload remains explicit.
+Unknown operations recover by authenticated receipt lookup without resending bytes.
+Use --operation KEY to select an existing attempt, or --inspect for bounded local
+metadata without cloud work. Only terminal failure permits deliberate --new-attempt.
+Never replace an unknown key. Exit 0 means cloud committed and receipt recorded;
+exit 1 means failed, unknown, or local bookkeeping uncertain. JSON separates local,
+cloud, bookkeeping and recovery. Cloud refusal preserves local data, including
+local 10 MiB snapshots above the cloud 8 MiB limit. Local/cloud deletion is
+independent. Sharing does not pin or extend 30-day/1 GiB local retention.

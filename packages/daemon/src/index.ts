@@ -83,6 +83,10 @@ import {
   usageFromPayload,
   deletionFromPayload,
 } from "./snapshot-response.js";
+import { parseShareInspection, parseSharePrepared } from "./sharing-response.js";
+import { parseShareAttempt, type SharePrepare } from "@planview/storage";
+import { DAEMON_SHARE_PATH } from "./http-routes.js";
+import { createDaemonSharing } from "./sharing.js";
 import { createDaemonApplication } from "./application.js";
 import { openManager, type ManagerServer, type ManagerLaunch } from "./manager.js";
 import { createOperationGate } from "./operation-gate.js";
@@ -1017,6 +1021,12 @@ const openDaemon = async (config: DaemonConfig) => {
       snapshots,
       operationGate,
     });
+    const sharing = createDaemonSharing({
+      metadataStore: openedMetadataStore,
+      publication: publicationCoordinator,
+      operationGate,
+      origin: () => `http://${runtimeDescriptor.host}:${runtimeDescriptor.port}`,
+    });
     const launchManager = (requestSignal?: AbortSignal) =>
       operationGate(async (signal) => {
         signal.throwIfAborted();
@@ -1060,6 +1070,7 @@ const openDaemon = async (config: DaemonConfig) => {
         metadataStore: openedMetadataStore,
         runCleanup,
         application,
+        sharing,
         launchManager,
         isReady: () => startupReady,
         documentReadAdmission,
@@ -2149,3 +2160,78 @@ export const launchDaemonManager = (config: DaemonConfig, options: StartDaemonOp
     } satisfies ManagerLaunch;
   });
 export type { ManagerLaunch } from "./manager.js";
+
+const daemonShareRequest = async <A>(
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  body: object,
+  parse: (value: unknown) => A,
+  signal: AbortSignal,
+  maxBytes = 128 * 1024,
+  allowStart = true
+) => {
+  const running = allowStart
+    ? await startDetachedDaemonPromise(config, options, signal)
+    : await inspectDaemonPromise(config, signal);
+  if ("state" in running && running.state !== "running")
+    throw new Error(
+      "The daemon was stopped. Recover this share receipt on the next explicit share invocation."
+    );
+  const answer = await request(
+    running.descriptor,
+    "POST",
+    DAEMON_SHARE_PATH,
+    JSON.stringify(body),
+    30_000,
+    signal,
+    maxBytes
+  );
+  return parse(parseResponse<unknown>(answer, DAEMON_SHARE_PATH, 200));
+};
+export const inspectDaemonShares = (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  id: string,
+  operation?: string
+) =>
+  daemonEffect(DAEMON_SHARE_PATH, (signal) =>
+    daemonShareRequest(
+      config,
+      options,
+      { action: "inspect", id, ...(operation ? { operation } : {}) },
+      parseShareInspection,
+      signal
+    )
+  );
+export const prepareDaemonShare = (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  input: SharePrepare
+) =>
+  daemonEffect(DAEMON_SHARE_PATH, (signal) =>
+    daemonShareRequest(
+      config,
+      options,
+      { action: "prepare", ...input },
+      parseSharePrepared,
+      signal,
+      16 * 1024 * 1024
+    )
+  );
+export const recordDaemonShare = (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  key: string,
+  receipt: unknown
+) =>
+  daemonEffect(DAEMON_SHARE_PATH, (signal) =>
+    daemonShareRequest(
+      config,
+      options,
+      { action: "record", operation: key, receipt },
+      parseShareAttempt,
+      signal,
+      128 * 1024,
+      false
+    )
+  );

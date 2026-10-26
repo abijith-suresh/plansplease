@@ -1,3 +1,4 @@
+import type { createDaemonSharing } from "./sharing.js";
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { pipeline } from "node:stream/promises";
@@ -32,6 +33,7 @@ export const DAEMON_PUBLISH_PATH = "/__planview/publish";
 export const DAEMON_INVENTORY_PATH = "/__planview/snapshots";
 export const DAEMON_USAGE_PATH = "/__planview/usage";
 export const DAEMON_DELETE_PATH = "/__planview/delete";
+export const DAEMON_SHARE_PATH = "/__planview/share";
 export const DAEMON_MANAGER_PATH = "/__planview/manager";
 export const DAEMON_CLEAN_PATH = "/__planview/clean";
 /** Slow consumers are allowed to backpressure, but not to remain completely idle forever. */
@@ -72,6 +74,7 @@ export type DaemonHttpRouteOptions = Readonly<{
   readonly publicationCoordinator: DocumentPublicationCoordinator;
   readonly metadataStore: MetadataStore;
   readonly application: DaemonApplication;
+  readonly sharing: ReturnType<typeof createDaemonSharing>;
   readonly launchManager: (signal?: AbortSignal) => Promise<ManagerLaunch>;
   readonly runCleanup: (signal?: AbortSignal) => Promise<DocumentCleanupResult>;
   readonly isReady: () => boolean;
@@ -172,6 +175,7 @@ const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
   DAEMON_MANAGER_PATH,
+  DAEMON_SHARE_PATH,
   "/internal/clean",
   "/internal/ready",
   "/internal/status",
@@ -393,6 +397,7 @@ const handleRequest = async (
     runCleanup,
     application,
     launchManager,
+    sharing,
     isReady,
     documentReadAdmission,
     acknowledgeStartup,
@@ -577,6 +582,57 @@ const handleRequest = async (
   if ((url === DAEMON_SHUTDOWN_PATH || url === "/internal/shutdown") && request.method === "POST") {
     response(res, 202, JSON.stringify({ shuttingDown: true }));
     requestShutdown();
+    return;
+  }
+  if (url === DAEMON_SHARE_PATH && request.method === "POST") {
+    const body = await readJsonBody(request, requestSignal);
+    if (
+      !isRecord(body) ||
+      Object.keys(body).some(
+        (key) =>
+          !["action", "id", "origin", "accountId", "newAttempt", "operation", "receipt"].includes(
+            key
+          )
+      )
+    )
+      throw new Error("Invalid share request.");
+    if (
+      body["action"] === "inspect" &&
+      typeof body["id"] === "string" &&
+      (body["operation"] === undefined || typeof body["operation"] === "string")
+    ) {
+      response(res, 200, JSON.stringify(sharing.inspect(body["id"], body["operation"])));
+    } else if (
+      body["action"] === "prepare" &&
+      typeof body["id"] === "string" &&
+      typeof body["origin"] === "string" &&
+      typeof body["accountId"] === "string" &&
+      (body["newAttempt"] === undefined || typeof body["newAttempt"] === "boolean") &&
+      (body["operation"] === undefined || typeof body["operation"] === "string")
+    ) {
+      response(
+        res,
+        200,
+        JSON.stringify(
+          await sharing.prepare(
+            {
+              id: body["id"],
+              origin: body["origin"],
+              accountId: body["accountId"],
+              ...(body["newAttempt"] === undefined ? {} : { newAttempt: body["newAttempt"] }),
+              ...(body["operation"] === undefined ? {} : { operation: body["operation"] }),
+            },
+            requestSignal
+          )
+        )
+      );
+    } else if (body["action"] === "record" && typeof body["operation"] === "string") {
+      response(
+        res,
+        200,
+        JSON.stringify(await sharing.record(body["operation"], body["receipt"], requestSignal))
+      );
+    } else throw new Error("Invalid share request.");
     return;
   }
   if (url === DAEMON_MANAGER_PATH && request.method === "POST") {

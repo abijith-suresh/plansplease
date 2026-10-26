@@ -69,3 +69,5 @@ export {
 export { CURRENT_SCHEMA_VERSION, openStorage, openStorageScoped } from "./sqlite-metadata-store.js";
 
 export * from "./management.js";
+
+export * from "./sharing.js";

@@ -62,7 +62,7 @@ export class GetCommandError extends Data.TaggedError("GetCommandError")<{
 }> {}
 
 export class CloudCommandError extends Data.TaggedError("CloudCommandError")<{
-  readonly operation: "login" | "logout" | "upload";
+  readonly operation: "login" | "logout" | "upload" | "share";
   readonly cause: unknown;
   readonly message: string;
   readonly sourcePath?: string;
