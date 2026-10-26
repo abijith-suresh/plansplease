@@ -1030,9 +1030,13 @@ const openDaemon = async (config: DaemonConfig) => {
             isShuttingDown: () => shutdownInitiated,
           });
           if (signal.aborted || shutdownInitiated) {
-            managerServer.revoke();
-            managerServer.stopAccepting();
-            await managerServer.close();
+            const cancelledManager = managerServer;
+            // A cancelled caller must not leave a closed listener cached for
+            // the next launch. Clear ownership even if closing fails.
+            managerServer = undefined;
+            cancelledManager.revoke();
+            cancelledManager.stopAccepting();
+            await cancelledManager.close();
             throw new Error("Daemon stopped during manager startup.");
           }
         }
