@@ -7,6 +7,7 @@ Core promise: one command turns an HTML file or folder into a durable, immutable
 Non-goals: a production cloud domain, public npm publishing before the owner enables it, and any filesystem, network, or cloud I/O in Core. `@planview/core` resolves paths and holds shared document policy; adapters (`local`, `daemon`, `storage`, `app`) own all I/O.
 Local snapshot inventory and logical storage usage belong to the daemon. The local application and CLI may list bounded metadata pages and delete a selected immutable generation through the existing storage locks and recovery operations. Listing does not refresh retention. Local management never uploads or deletes cloud documents.
 The optional local manager serves bundled static assets on a separate loopback origin in the same daemon process. Browser sessions are independent of the native daemon secret. Manager start and browser opening are explicit; stopping the daemon stops both listeners.
+Cloud upload idempotency is opt-in and account/origin scoped. Durable server receipts bind an operation key to exact content and metadata; replay never starts a second upload. Unknown outcomes stay explicit. Legacy upload and local publish behavior remain unchanged; local-first sharing is a later CLI slice.
 Status: live, alpha.
 
 ## Sources of Truth

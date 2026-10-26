@@ -107,3 +107,26 @@ characters per call; bundle paths can be listed and text assets read separately.
 OpenCode clients that need the older MCP transport require
 `MCP_ALLOW_LEGACY_CLIENTS=true` on both app and Convex before deployment. Keep it
 unset to serve the default CIMD OAuth flow.
+
+## Optional keyed upload operations
+
+The existing authenticated upload route supports an opt-in `Idempotency-Key`
+header and authenticated receipt lookup on `GET /api/documents/upload`. Convex
+retains account/origin-specific receipts and binds each key to the server-hashed
+exact bytes and normalized metadata. Concurrent/repeated requests never start a
+second provider upload. Commit, failure fencing, quota and cleanup use the
+existing transactions and ownership checks. A pending receipt or unavailable
+backend means an unknown outcome; it does not authorize replay.
+
+See the [upload operation protocol](../docs/src/content/docs/reference/upload-operations.md)
+for statuses, fingerprints, crash recovery limits, retained receipt metadata and
+compatible rollout/rollback requirements. No CLI share command or automatic
+retry is added. Legacy unkeyed uploads remain compatible.
+
+Local protocol fixtures use the production HTTP handlers, proof verification,
+mutation functions and filesystem adapter with a transaction retry/rollback
+model. They do not run a Convex service or contact UploadThing. Run `npm run test:upload:installed` from the root to pack/install the real CLI in an isolated
+prefix, exercise its unchanged legacy upload over loopback HTTP, then exercise
+keyed upload/replay/receipt lookup on the same local fixture. Set `TARBALL` to
+reuse an already built package. This is a local fixture, not hosted-provider or
+native corporate-laptop proof.

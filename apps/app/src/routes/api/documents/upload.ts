@@ -9,10 +9,21 @@ import {
 } from "~/lib/convex-server";
 import { cliCredentialFromRequest } from "~/lib/cli-credential";
 import { getDocumentStorage, isDocumentStorageConfigured } from "~/lib/document-storage";
+import { readAppOrigin } from "~/lib/public-app-url";
+import { createUploadReceiptHandler } from "~/lib/upload-receipt-handler";
+import type { DocumentUploadHandlerDependencies } from "~/lib/document-upload-handler";
+import type { ConvexHttpClient } from "convex/browser";
 import { createDocumentUploadHandler } from "~/lib/document-upload-handler";
 import { createDocumentProof, createAbandonDocumentProof } from "~/lib/document-mutation-proof";
 
-export const POST = createDocumentUploadHandler({
+const dependencies: DocumentUploadHandlerDependencies<ConvexHttpClient> = {
+  getOperationOrigin: () => readAppOrigin(process.env["SITE_URL"]),
+  getUploadReceipt: (client, input, request) => {
+    const cliCredential = cliCredentialFromRequest(request);
+    return cliCredential
+      ? client.query(api.documents.uploadReceiptWithCliCredential, { ...input, ...cliCredential })
+      : client.query(api.documents.uploadReceipt, input);
+  },
   getAuthedClient: (request) => {
     const cliCredential = cliCredentialFromRequest(request);
     if (cliCredential) {
@@ -73,4 +84,7 @@ export const POST = createDocumentUploadHandler({
   createUploadId: randomUUID,
   missingServerConfigurationResponse,
   errorResponse,
-});
+};
+
+export const POST = createDocumentUploadHandler(dependencies);
+export const GET = createUploadReceiptHandler(dependencies);
