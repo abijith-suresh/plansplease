@@ -1,6 +1,7 @@
 export const COMMANDS = [
   "publish",
   "upload",
+  "share",
   "login",
   "logout",
   "get",
@@ -23,6 +24,7 @@ const ROOT_HELP = `Usage: plansplease [global-options] <command> [options]
 
 Commands:
   publish <file|folder>  Publish a snapshot and print its URL
+  share <local-id>       Explicitly share one immutable local snapshot
   upload <file|folder>   Upload an HTML page or artifact to your cloud workspace
   login                  Sign in to your cloud workspace
   logout                 Revoke and remove this computer's saved cloud sign-in
@@ -63,6 +65,25 @@ Options:
   -h, --help             Show this help message
   --open                 Open the published URL in the default browser
   --json                 Print the snapshot id and URL as one JSON object
+`,
+  share: `Usage: plansplease share [options] <local-id>
+
+Share daemon-owned immutable bytes with the configured cloud account. Publish stays
+local-only. Unknown attempts recover by receipt lookup, without resending bytes.
+Local/cloud deletion is independent. Sharing does not pin the 30-day/1 GiB local copy.
+Cloud accepts 8 MiB; a larger local snapshot remains usable after cloud refusal.
+
+Options:
+  -h, --help             Show this help without starting a daemon or cloud work
+  --json                 Print bounded local/cloud outcomes and recovery guidance
+  --open                 Explicitly open a confirmed cloud document link
+  --inspect              Inspect local attempts only; daemon owns this metadata
+  --operation <key>      Recover or inspect one retained operation
+  --new-attempt          Deliberately replace a proven terminal failed attempt
+
+The selected profile's saved credential is used without opening sign-in.
+Exit 0 means committed and locally recorded; exit 1 means failed/unknown/bookkeeping
+uncertain. Inspection starts/reuses the daemon but never contacts the cloud.
 `,
   upload: `Usage: plansplease upload [options] <file.html|folder>
 

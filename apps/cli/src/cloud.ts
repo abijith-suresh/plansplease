@@ -21,7 +21,7 @@ const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const CLOUD_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
 
-type Credentials = Readonly<{
+export type Credentials = Readonly<{
   version: 1;
   cloudUrl: string;
   token: string;
@@ -431,7 +431,7 @@ const readResponseMessage = async (response: Response, signal: AbortSignal) => {
   return `Cloud request failed (${response.status}).`;
 };
 
-const requireCloudCredentials = async (profile?: string) => {
+export const requireCloudCredentials = async (profile?: string) => {
   const credentials = await loadCredentials(profile);
   if (!credentials) throw new Error("Not signed in to the cloud. Run `plansplease login` first.");
   return credentials;

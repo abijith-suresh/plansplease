@@ -545,3 +545,36 @@ test("lost admission response cannot misreport a different existing fingerprint 
   assert.equal((await response.json()).code, "UPLOAD_OPERATION_CONFLICT");
   assert.equal(f.state.uploads, 1);
 });
+
+test("authenticated capability discovery binds the configured origin/account and leaves admission untouched", async (t) => {
+  const f = await fixture(t);
+  const request = new Request(`${origin}/api/documents/upload`, {
+    headers: { "Planview-Upload-Protocol": "1" },
+  });
+  const answer = await f.lookup({ request });
+  assert.equal(answer.status, 200);
+  assert.deepEqual(await answer.json(), {
+    version: 1,
+    accountId: "owner-a",
+    origin,
+    maxBytes: 8 * 1024 * 1024,
+    receipts: true,
+  });
+  assert.equal(f.database.rows("uploadReceipts").length, 0);
+  assert.equal(f.state.uploads, 0);
+  assert.equal(
+    (
+      await f.lookup({
+        request: new Request("https://foreign.example/api/documents/upload", {
+          headers: { "Planview-Upload-Protocol": "1" },
+        }),
+      })
+    ).status,
+    400
+  );
+  const unauthorized = createUploadReceiptHandler({
+    ...f.dependencies,
+    getAuthedClient: async () => ({ client: {}, token: null }),
+  });
+  assert.equal((await unauthorized({ request })).status, 401);
+});

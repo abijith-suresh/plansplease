@@ -64,7 +64,8 @@ Optional [keyed upload operations](../upload-operations/) bind the authenticated
 account and configured app origin to exact server-hashed bytes and metadata.
 Receipt admission, document commit and failure fencing use the existing backend
 transactions; repeated requests return a durable outcome without replaying bytes.
-Legacy uploads remain unkeyed. Explicit local-first CLI sharing is pending.
+Legacy uploads remain unkeyed. Explicit local-first CLI sharing uses daemon-owned immutable bytes and a durable
+local attempt before admission; recovery performs authenticated receipt lookup.
 
 The provider adapter owns uploads, read URLs, and deletion. Standalone HTML
 previews download from storage in the browser after the app checks ownership.
@@ -86,5 +87,5 @@ application operations as the native API. It owns no SQLite connection, cloud
 client or additional persistent process. Browser sessions and native daemon
 credentials are separate. Only packaged trusted assets run on the manager
 origin; arbitrary HTML snapshots remain on the preview origin. Both listeners
-share lifecycle and stop together. Profile controls and local-to-cloud sharing
-are separate phases.
+share lifecycle and stop together. Profile controls and pinning remain separate
+phases; CLI sharing does not expose cloud credentials or mutation to the manager.

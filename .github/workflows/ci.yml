@@ -235,5 +235,10 @@ jobs:
       - name: Pack from clean build outputs and run CLI lifecycle smoke
         run: node scripts/cross-platform-smoke.mjs
 
+      - name: Test installed sharing with daemon and production protocol fixtures
+        env:
+          PLANVIEW_TEST_PACK_BUILT: "1"
+        run: npm run test:upload:installed
+
       - name: Test cloud CLI flow
         run: node --test apps/cli/test/cloud.test.mts

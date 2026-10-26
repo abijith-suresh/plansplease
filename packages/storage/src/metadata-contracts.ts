@@ -1,3 +1,4 @@
+import type { ShareAttempt, ShareScope } from "./sharing.js";
 import { Data } from "effect";
 
 export type DocumentMetadata = {
@@ -74,6 +75,14 @@ export class StorageInvariantError extends Data.TaggedError("StorageInvariantErr
 }> {}
 
 export interface MetadataStore {
+  readonly getShareAttempt: (key: string) => ShareAttempt | undefined;
+  readonly latestShareAttempt: (scope: ShareScope) => ShareAttempt | undefined;
+  readonly listShareAttempts: (id: string) => {
+    attempts: readonly ShareAttempt[];
+    hasMore: boolean;
+  };
+  readonly insertShareAttempt: (attempt: ShareAttempt) => void;
+  readonly recordShareReceipt: (key: string, receipt: unknown) => ShareAttempt;
   readonly close: () => void;
   readonly insertDocumentMetadata: (metadata: DocumentMetadata) => void;
   readonly getDocumentMetadata: (id: string) => DocumentMetadata | undefined;

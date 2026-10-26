@@ -1,3 +1,16 @@
+import {
+  matchCloudUploadReceipt,
+  parseCloudUploadReceipt,
+  uploadOperationKey,
+} from "@planview/core";
+import {
+  MAX_SHARE_ATTEMPTS,
+  SHARE_INSPECTION_LIMIT,
+  parseShareAttempt,
+  validateShareScope,
+  type ShareAttempt,
+  type ShareScope,
+} from "./sharing.js";
 import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -537,7 +550,99 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     });
   };
 
+  const attemptFromRow = (row: Record<string, unknown> | undefined) => {
+    if (row === undefined) return undefined;
+    const attempt = parseShareAttempt(JSON.parse(readText(row["record"], "share record")));
+    if (
+      attempt.key !== row["operationKey"] ||
+      attempt.id !== row["localId"] ||
+      attempt.origin !== row["origin"] ||
+      attempt.accountId !== row["accountId"]
+    )
+      throw new Error("Stored share operation identity mismatch.");
+    return attempt;
+  };
+  const getShareAttempt = (key: string) => {
+    ensureOpen();
+    return attemptFromRow(
+      database
+        .prepare(
+          "SELECT operationKey, localId, origin, accountId, record FROM share_attempts WHERE operationKey = ?"
+        )
+        .get(uploadOperationKey(key))
+    );
+  };
+  const latestShareAttempt = (scope: ShareScope) => {
+    ensureOpen();
+    const value = validateShareScope(scope);
+    return attemptFromRow(
+      database
+        .prepare(
+          "SELECT operationKey, localId, origin, accountId, record FROM share_attempts WHERE localId = ? AND origin = ? AND accountId = ? ORDER BY rowid DESC LIMIT 1"
+        )
+        .get(value.id, value.origin, value.accountId)
+    );
+  };
+  const listShareAttempts = (id: string) => {
+    ensureOpen();
+    const rows = database
+      .prepare(
+        "SELECT operationKey, localId, origin, accountId, record FROM share_attempts WHERE localId = ? ORDER BY rowid DESC LIMIT ?"
+      )
+      .all(validateId(id), SHARE_INSPECTION_LIMIT + 1);
+    return {
+      attempts: rows.slice(0, SHARE_INSPECTION_LIMIT).map((row) => attemptFromRow(row)!),
+      hasMore: rows.length > SHARE_INSPECTION_LIMIT,
+    };
+  };
+  const insertShareAttempt = (input: ShareAttempt) => {
+    ensureOpen();
+    const attempt = parseShareAttempt(input);
+    inTransaction(database, () => {
+      const latest = latestShareAttempt(attempt);
+      if (latest && latest.status !== "failed")
+        throw new Error("An unresolved or committed share already owns this scope.");
+      const count = database.prepare("SELECT COUNT(*) AS count FROM share_attempts").get();
+      if (Number(count?.["count"]) >= MAX_SHARE_ATTEMPTS)
+        throw new Error(
+          "Local share attempt capacity reached; existing operations remain recoverable."
+        );
+      database
+        .prepare(
+          "INSERT INTO share_attempts (operationKey, localId, origin, accountId, record) VALUES (?, ?, ?, ?, ?)"
+        )
+        .run(attempt.key, attempt.id, attempt.origin, attempt.accountId, JSON.stringify(attempt));
+    });
+  };
+  const recordShareReceipt = (key: string, value: unknown) => {
+    ensureOpen();
+    return inTransaction(database, () => {
+      const current = getShareAttempt(key);
+      if (!current) throw new Error("The local share operation is missing. Do not upload again.");
+      const receipt = matchCloudUploadReceipt(parseCloudUploadReceipt(value), current);
+      const status = receipt.status === "pending" ? "unknown" : receipt.status;
+      if (current.status !== "unknown") {
+        if (status === "unknown") return current;
+        if (current.status !== status || current.receipt?.documentId !== receipt.documentId)
+          throw new Error(
+            "Conflicting terminal cloud receipt. Keep the original operation for investigation."
+          );
+        return current;
+      }
+      const next = parseShareAttempt({ ...current, status, receipt });
+      database
+        .prepare("UPDATE share_attempts SET record = ? WHERE operationKey = ?")
+        .run(JSON.stringify(next), key);
+      return next;
+    });
+  };
+
   return {
+    getShareAttempt,
+    latestShareAttempt,
+    listShareAttempts,
+    insertShareAttempt,
+    recordShareReceipt,
     close,
     insertDocumentMetadata,
     getDocumentMetadata,

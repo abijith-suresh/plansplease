@@ -1,3 +1,5 @@
+import { shareSnapshot } from "./share.js";
+import { isValidDocumentId } from "@planview/core";
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
@@ -272,6 +274,76 @@ const runCloudUploadCommand = (
     })
   );
 
+const runShareCommand = (
+  args: readonly string[],
+  stdout: StdoutWriter,
+  profile?: string
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, {
+    allowJson: true,
+    allowOpen: true,
+    helpTopic: "share",
+    flagOptions: ["--inspect", "--new-attempt"],
+    valueOptions: ["--operation"],
+    allowLeadingHyphenOperand: isValidDocumentId,
+  }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, "share");
+      const id = parsed.operands[0];
+      const inspect = parsed.named?.["--inspect"] !== undefined;
+      const fresh = parsed.named?.["--new-attempt"] !== undefined;
+      const operation = parsed.named?.["--operation"];
+      if (
+        parsed.operands.length !== 1 ||
+        !id ||
+        !isValidDocumentId(id) ||
+        (inspect && (fresh || parsed.open)) ||
+        (fresh && operation !== undefined) ||
+        (operation !== undefined && !/^[A-Za-z0-9_-]{16,128}$/.test(operation))
+      )
+        return Effect.fail(unexpectedArguments(parsed.operands, formatHelp("share")));
+      return Effect.tryPromise({
+        try: async () => {
+          const application = applicationFor(profile);
+          if (inspect) {
+            const result = await Effect.runPromise(application.shareInspect(id, operation));
+            await Effect.runPromise(
+              writeCommandResult(
+                stdout,
+                parsed.json ? "json" : "text",
+                result,
+                (value) => `${JSON.stringify(value)}\n`
+              )
+            );
+            return 0;
+          }
+          const result = await shareSnapshot(application, id, profile, {
+            newAttempt: fresh,
+            ...(operation ? { operation } : {}),
+          });
+          await Effect.runPromise(
+            writeCommandResult(
+              stdout,
+              parsed.json ? "json" : "text",
+              result,
+              (value) =>
+                `Local ${value.local.id}: ${value.local.status}${value.local.url ? ` ${value.local.url}` : ""}\nCloud: ${value.cloud.status}${value.cloud.url ? ` ${value.cloud.url}` : ""}\nRecovery: ${value.recovery}\n`
+            )
+          );
+          if (parsed.open && result.cloud.status === "committed" && result.cloud.url)
+            await openUrl(result.cloud.url);
+          return result.cloud.status === "committed" && result.bookkeeping === "recorded" ? 0 : 1;
+        },
+        catch: (cause) =>
+          new CloudCommandError({
+            operation: "share",
+            cause,
+            message: `Could not share local snapshot: ${describe(cause)}`,
+          }),
+      });
+    })
+  );
+
 const commandWithProfile = (
   args: readonly string[],
   stdout: StdoutWriter,
@@ -319,6 +391,8 @@ const commandWithProfile = (
   if (argument === "logout") {
     return runLogoutCommand(trailing, stdout, profile);
   }
+
+  if (argument === "share") return runShareCommand(trailing, stdout, profile);
 
   if (argument === "upload") {
     return runCloudUploadCommand(trailing, stdout, profile);

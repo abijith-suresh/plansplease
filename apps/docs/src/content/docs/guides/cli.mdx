@@ -108,6 +108,30 @@ control the native daemon API, and the daemon secret is never given to the
 browser. There is no permissive CORS or ambient localhost-cookie authority.
 The cloud app, hosted MCP, cloud uploads and cloud deletions remain separate.
 
+## Share a local snapshot
+
+<Code code={`plansplease share --json LOCAL_ID
+plansplease share --inspect --json LOCAL_ID
+plansplease share --operation OPERATION_KEY --json LOCAL_ID`} lang="sh" />
+
+Share uploads daemon-owned immutable bytes using your configured profile credential,
+without browser sign-in. It preserves ID/generation/hash and exact encoded folders.
+Publish stays local-only; legacy upload stays cloud-only. Opening is explicit with
+`--open`. Sharing does not pin a snapshot or extend its 30-day retention.
+
+Each account/origin/content-bound key is recorded locally before remote admission.
+Concurrent calls admit once. Pending/unknown calls recover by receipt lookup without
+resending bytes; `not_found` is not proof of failure. JSON separates local/cloud
+outcomes, bookkeeping and recovery. A cloud failure never removes local data.
+Local 10 MiB snapshots above the cloud 8 MiB limit remain usable and report
+`CLOUD_SIZE_LIMIT`. Old servers fail closed. Only proven terminal failure permits a
+deliberate `--new-attempt`; never replace an unknown key. Local inspection uses the
+daemon's bounded metadata and never contacts the cloud.
+
+See the [upload operation contract](../../reference/upload-operations/) for receipts
+and uncertainty. Local/cloud deletion remains independent; 30-day/1 GiB policy is
+not a permanent offline-retention promise.
+
 ## Cloud upload
 
 <Code code={`plansplease login --cloud-url http://127.0.0.1:3000\nplansplease upload --open ./report.html\nplansplease upload --json ./report.html\nplansplease logout`} lang="sh" />

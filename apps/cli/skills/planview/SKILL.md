@@ -120,3 +120,26 @@ The UI and previews use separate origins within the same daemon. Stopping the
 daemon stops both. There is no browser query editor, cloud mutation, folder
 import or profile switcher in this slice. Agents should continue using the CLI's
 bounded list/usage/delete operations directly.
+
+
+## Explicit local-first sharing
+
+Use `plansplease share --json LOCAL_ID` only when cloud sharing is requested.
+`publish` remains local-only, and `upload PATH` is the compatible explicit
+cloud-only path. Share uses daemon-owned immutable snapshot bytes, including
+encoded folders, without recapturing the original source. It records a scoped
+operation key before remote admission. Use the existing configured credential;
+share does not open browser sign-in. Opening a confirmed link requires `--open`.
+
+Read `local`, `cloud`, `bookkeeping` and `recovery` from JSON. A failed cloud step
+keeps local data. Local 10 MiB versus cloud 8 MiB refusal reports `CLOUD_SIZE_LIMIT`.
+Local 30-day/1 GiB retention is not permanent offline storage, and share does not pin.
+Deletion is independent. Never delete the local snapshot to compensate cloud failure.
+
+For pending/unknown outcomes run `share --operation KEY --json LOCAL_ID` with the
+original account/origin. It only looks up the receipt, never resends bytes. A 404
+or timeout does not prove admission failed. Never replace an unknown key. Local
+receipt-write uncertainty after cloud commit also needs lookup. `share --inspect
+--json LOCAL_ID` uses daemon-owned bounded local metadata with no cloud request.
+Only a proven terminal failure permits deliberate `share --new-attempt LOCAL_ID`.
+Older servers, wrong account/origin and conflicting receipts fail closed.

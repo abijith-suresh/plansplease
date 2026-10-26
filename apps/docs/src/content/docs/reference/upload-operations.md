@@ -5,8 +5,8 @@ description: Optional account-scoped idempotency and durable upload receipts.
 
 This protocol is implemented in source and tested with local fixtures. Hosted
 use requires compatible app and Convex releases. No deployment is implied.
-`plansplease upload PATH` and hosted MCP keep their existing behavior. There is
-no `share LOCAL_ID` command yet, automatic retry, or background synchronization.
+`plansplease upload PATH` and hosted MCP keep their existing behavior. `share LOCAL_ID` explicitly opts in for existing daemon-owned snapshots. There is
+no automatic retry or background synchronization.
 
 ## Opt in to one operation
 
@@ -97,8 +97,8 @@ account erasure policy need a separate design that preserves replay safety.
 
 Without the header, multipart upload still returns `201 { "id": "..." }` and
 uses the existing reservation/compensation path. It does not deduplicate,
-automatically retry, or save a receipt. Existing CLI, browser and MCP clients are
-not opted in. New keyed app requests fail closed against an older backend that
+automatically retry, or save a receipt. Legacy CLI upload, browser uploads and MCP clients are
+not opted in; explicit `share LOCAL_ID` opts in. New keyed app requests fail closed against an older backend that
 does not support receipt admission; they never fall back to unkeyed uploads.
 
 For a future coordinated rollout, deploy the additive schema and compatible
@@ -107,12 +107,30 @@ backend before the matching app. Retain receipt rows and reservation
 fence and must not process in-flight keyed operations; stop admission and let
 those operations settle before rolling back. This change performs no deployment.
 
-## Local-first sharing remains pending
+## Explicit local-first sharing
 
-A future explicit share operation must read daemon-owned immutable snapshot
-bytes once, preserve local ID/generation/hash, and store receipts by cloud
-origin and account. Local success must survive cloud refusal or uncertainty;
-local and cloud deletion stay independent. Local snapshots allow 10 MiB, while
+`share LOCAL_ID` reads daemon-owned immutable snapshot bytes once, preserves local
+ID/generation/hash, and stores attempts and receipts by cloud origin and account
+in the daemon's existing SQLite owner. Only one invocation receives admission
+bytes, after the key is durably recorded. Pending/unknown attempts recover by GET,
+without resending bytes. `not_found` is not a cancellation fence. Local success
+survives cloud refusal or uncertainty; local and cloud deletion stay independent.
+
+Before admission the CLI sends authenticated `GET /api/documents/upload` without
+an operation key and with `Planview-Upload-Protocol: 1`. A compatible server returns
+`{version:1, accountId, origin, maxBytes:8388608, receipts:true}` from its configured
+origin. This discovery performs no admission. The CLI validates identity/protocol
+and uses the captured credential for subsequent requests, with redirects refused.
+Legacy discovery failure prevents POST; a response without a matching receipt,
+including legacy 201, is never accepted as a committed share receipt.
+
+The daemon retains a finite 10,000 attempts per profile, with bounded local
+inspection and direct operation-key lookup. No credentials or snapshot bytes are
+stored in attempts. Lost local acknowledgements leave the durable key for lookup;
+unknown keys cannot be replaced. A deliberate `--new-attempt` requires terminal
+failure. Historical committed receipts can refer to subsequently deleted cloud
+documents and never recreate them. These are local source/test capabilities;
+compatible hosted app/backend rollout remains a separate operator action. Local snapshots allow 10 MiB, while
 cloud uploads allow 8 MiB. The existing local 30-day retention and 1 GiB quota
 do not promise permanent offline retention. Pinning and profile controls are
 separate pending work.

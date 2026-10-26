@@ -120,13 +120,14 @@ backend means an unknown outcome; it does not authorize replay.
 
 See the [upload operation protocol](../docs/src/content/docs/reference/upload-operations.md)
 for statuses, fingerprints, crash recovery limits, retained receipt metadata and
-compatible rollout/rollback requirements. No CLI share command or automatic
-retry is added. Legacy unkeyed uploads remain compatible.
+compatible rollout/rollback requirements. The explicit CLI `share LOCAL_ID` command opts in; legacy upload has no automatic
+retry. Legacy unkeyed uploads remain compatible.
 
 Local protocol fixtures use the production HTTP handlers, proof verification,
 mutation functions and filesystem adapter with a transaction retry/rollback
 model. They do not run a Convex service or contact UploadThing. Run `npm run test:upload:installed` from the root to pack/install the real CLI in an isolated
 prefix, exercise its unchanged legacy upload over loopback HTTP, then exercise
-keyed upload/replay/receipt lookup on the same local fixture. Set `TARBALL` to
+keyed upload/replay/receipt lookup and installed share through the actual daemon
+and SQLite owner, including loss/concurrency/restart/bundles/account/origin cases. Set `TARBALL` to
 reuse an already built package. This is a local fixture, not hosted-provider or
 native corporate-laptop proof.

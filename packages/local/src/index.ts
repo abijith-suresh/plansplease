@@ -1,5 +1,8 @@
 import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import {
+  inspectDaemonShares,
+  prepareDaemonShare,
+  recordDaemonShare,
   launchDaemonManager,
   type ManagerLaunch,
   listDaemonSnapshots,
@@ -18,6 +21,10 @@ import {
   stopDaemon,
 } from "@planview/daemon";
 import type {
+  SharePrepare,
+  ShareAttempt,
+  ShareInspection,
+  SharePrepared,
   SnapshotListOptions,
   SnapshotSelection,
   SnapshotInventory,
@@ -30,6 +37,7 @@ import { preparePublishSource } from "./publish-source.js";
 import { parseDocumentReferenceDetails } from "./reference.js";
 
 export type LocalOperation =
+  | "share"
   | "publish"
   | "get"
   | "start"
@@ -83,6 +91,17 @@ export type LocalGetOptions = Readonly<{
 }>;
 
 export type LocalApplication = Readonly<{
+  readonly shareInspect: (
+    id: string,
+    operation?: string
+  ) => Effect.Effect<ShareInspection, LocalApplicationFailure>;
+  readonly sharePrepare: (
+    input: SharePrepare
+  ) => Effect.Effect<SharePrepared, LocalApplicationFailure>;
+  readonly shareRecord: (
+    key: string,
+    receipt: unknown
+  ) => Effect.Effect<ShareAttempt, LocalApplicationFailure>;
   readonly manager: () => Effect.Effect<ManagerLaunch, LocalApplicationFailure>;
   readonly list: (
     options?: SnapshotListOptions
@@ -264,6 +283,18 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
   const manager = () =>
     withConfig("ui", resolveConfig, (config) => launchDaemonManager(config, daemonOptions));
   return {
+    shareInspect: (id, operation) =>
+      withConfig("share", resolveConfig, (config) =>
+        inspectDaemonShares(config, daemonOptions, id, operation)
+      ),
+    sharePrepare: (input) =>
+      withConfig("share", resolveConfig, (config) =>
+        prepareDaemonShare(config, daemonOptions, input)
+      ),
+    shareRecord: (key, receipt) =>
+      withConfig("share", resolveConfig, (config) =>
+        recordDaemonShare(config, daemonOptions, key, receipt)
+      ),
     manager,
     publish,
     get,
@@ -291,6 +322,10 @@ export {
 export { preparePublishSource };
 
 export type {
+  SharePrepare,
+  ShareAttempt,
+  ShareInspection,
+  SharePrepared,
   SnapshotListOptions,
   SnapshotSelection,
   SnapshotInventory,
