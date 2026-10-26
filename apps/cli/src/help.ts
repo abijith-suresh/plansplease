@@ -13,6 +13,8 @@ export const COMMANDS = [
   "list",
   "usage",
   "delete",
+  "pin",
+  "unpin",
   "ui",
   "help",
 ] as const;
@@ -36,6 +38,7 @@ Commands:
   list                   List local snapshots in bounded pages
   usage                  Show logical storage usage and retention
   delete <id>            Delete one listed snapshot generation
+  pin/unpin <id>         Protect a selected generation from automatic cleanup
   clean                  Remove expired snapshots and reconcile storage
   ui                     Start the local manager and print a one-use launch link
   help [command]         Show help for a command
@@ -183,6 +186,17 @@ Starts or reuses the selected profile's daemon, including startup cleanup.
 Options:
   -h, --help             Show this help message
   --json                 Print usage as one JSON object
+`,
+  pin: `Usage: plansplease pin <id> --generation <generation> [--json]
+
+Pin an existing listed immutable generation for offline use. Pins count toward
+1 GiB quota and survive automatic cleanup. Manual delete remains allowed.
+Pinning is not a backup. It does not refresh access or upload anything.
+`,
+  unpin: `Usage: plansplease unpin <id> --generation <generation> [--json]
+
+Restore the original access-clock expiry, without refreshing it. If that expiry
+has passed, cleanup may remove the snapshot promptly. Inspect list before action.
 `,
   delete: `Usage: plansplease delete [options] <id> --generation <generation>
 

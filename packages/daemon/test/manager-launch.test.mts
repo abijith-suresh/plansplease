@@ -93,6 +93,7 @@ for (const failClose of [false, true]) {
           list: unexpected,
           usage: unexpected,
           deleteSnapshot: unexpected,
+          setPinned: unexpected,
           publishSource: unexpected,
           importHtml: unexpected,
         },

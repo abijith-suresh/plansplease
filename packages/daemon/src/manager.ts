@@ -270,6 +270,8 @@ export const openManager = async (options: ManagerOptions) => {
               pid: process.pid,
             });
             return;
+          case "/api/pin":
+          case "/api/unpin":
           case "/api/delete": {
             only(payload, ["id", "generation"]);
             if (typeof payload["id"] !== "string" || typeof payload["generation"] !== "string")
@@ -278,7 +280,17 @@ export const openManager = async (options: ManagerOptions) => {
               id: payload["id"],
               generation: payload["generation"],
             });
-            response(res, 200, await options.application.deleteSnapshot(selected, signal));
+            response(
+              res,
+              200,
+              target.pathname === "/api/delete"
+                ? await options.application.deleteSnapshot(selected, signal)
+                : await options.application.setPinned(
+                    selected,
+                    target.pathname === "/api/pin",
+                    signal
+                  )
+            );
             return;
           }
           case "/api/logout": {

@@ -406,7 +406,13 @@ const commandWithProfile = (
     return runDocumentCommand(argument, application, trailing, stdout, openUrl);
   }
 
-  if (argument === "list" || argument === "usage" || argument === "delete") {
+  if (
+    argument === "list" ||
+    argument === "usage" ||
+    argument === "delete" ||
+    argument === "pin" ||
+    argument === "unpin"
+  ) {
     return runInventoryCommand(argument, application, trailing, stdout);
   }
 

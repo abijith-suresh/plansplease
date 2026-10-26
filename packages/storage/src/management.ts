@@ -1,3 +1,4 @@
+import { finished } from "node:stream/promises";
 import { validateDocumentId, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import { Data, Effect } from "effect";
 import { V1_RETENTION_MILLISECONDS } from "./cleanup.js";
@@ -10,12 +11,31 @@ import type {
 
 export type SnapshotListOptions = Readonly<{ limit?: number; after?: string }>;
 export type SnapshotSelection = Readonly<{ id: string; generation: string }>;
+export type SnapshotRetention = Readonly<{
+  pinned: boolean;
+  expiresAt: number | null;
+  unpinnedExpiresAt: number;
+}>;
+export const snapshotRetention = (
+  row: Pick<DocumentMetadataSnapshot, "pinned" | "lastAccessedAt">
+): SnapshotRetention => ({
+  pinned: row.pinned,
+  expiresAt: row.pinned ? null : row.lastAccessedAt + V1_RETENTION_MILLISECONDS,
+  unpinnedExpiresAt: row.lastAccessedAt + V1_RETENTION_MILLISECONDS,
+});
+export type SnapshotPinResult = SnapshotSelection &
+  Readonly<{
+    status: "updated" | "not_found" | "stale" | "unavailable";
+    retention?: SnapshotRetention;
+  }>;
 export type SnapshotInventory = Readonly<{
-  snapshots: readonly (DocumentMetadataSnapshot & { expiresAt: number })[];
+  snapshots: readonly (DocumentMetadataSnapshot & SnapshotRetention)[];
   nextAfter?: string;
 }>;
 export type SnapshotUsage = DocumentStorageUsage &
   Readonly<{
+    pinnedBytes: number;
+    pinnedCount: number;
     quotaBytes: number;
     retentionMilliseconds: number;
   }>;
@@ -73,7 +93,7 @@ export const createSnapshotManagement = ({
         return {
           snapshots: page.rows.map((row) => ({
             ...row,
-            expiresAt: row.lastAccessedAt + V1_RETENTION_MILLISECONDS,
+            ...snapshotRetention(row),
           })),
           ...(page.hasMore && last !== undefined ? { nextAfter: last.id } : {}),
         };
@@ -84,6 +104,7 @@ export const createSnapshotManagement = ({
     Effect.try({
       try: (): SnapshotUsage => ({
         ...metadataStore.getDocumentStorageUsage(),
+        ...metadataStore.getPinnedStorageUsage(),
         quotaBytes: V1_STORAGE_QUOTA_BYTES,
         retentionMilliseconds: V1_RETENTION_MILLISECONDS,
       }),
@@ -160,5 +181,44 @@ export const createSnapshotManagement = ({
       },
       catch: failure,
     });
-  return { list, usage, deleteSnapshot };
+  const setPinned = (input: SnapshotSelection, pinned: boolean, signal?: AbortSignal) =>
+    Effect.tryPromise({
+      try: async (): Promise<SnapshotPinResult> => {
+        const selection = validateSnapshotSelection(input);
+        signal?.throwIfAborted();
+        const row = metadataStore.getDocumentMetadataSnapshot(selection.id);
+        if (!row) return { ...selection, status: "not_found" };
+        if (row.generation !== selection.generation) return { ...selection, status: "stale" };
+        // A read lease excludes deletion/replacement while pinning existing owned bytes.
+        // It does not record access or consume/re-encode folder contents.
+        const lease = await documentFileStore.readDocumentLease(selection.id);
+        try {
+          signal?.throwIfAborted();
+          const observation = await documentFileStore.getDocumentFileObservation(selection.id);
+          if (!observation || observation.size !== row.size)
+            return { ...selection, status: "unavailable" };
+          signal?.throwIfAborted();
+          const status = metadataStore.setDocumentPinned(selection, pinned);
+          const current = metadataStore.getDocumentMetadataSnapshot(selection.id);
+          if (status !== "updated") return { ...selection, status };
+          if (!current || current.generation !== selection.generation)
+            return { ...selection, status: "stale" };
+          return { ...selection, status, retention: snapshotRetention(current) };
+        } finally {
+          // Wait for the descriptor to close before releasing protection, including
+          // on Windows where the next queued delete must not race an open handle.
+          const closed = finished(lease.stream).catch(() => undefined);
+          lease.stream.destroy();
+          await closed;
+          lease.release();
+        }
+      },
+      catch: (cause) =>
+        failure(
+          new Error(
+            `Pin state was not confirmed. Refresh list for this generation before retrying. ${describe(cause)}`
+          )
+        ),
+    });
+  return { list, usage, deleteSnapshot, setPinned };
 };

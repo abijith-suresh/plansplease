@@ -9,7 +9,7 @@ import {
   validateDocumentId,
   type CloudUploadReceipt,
 } from "@planview/core";
-import { validateSnapshotSelection } from "./management.js";
+import { type SnapshotRetention, validateSnapshotSelection } from "./management.js";
 
 export type ShareAttempt = Readonly<{
   version: 1;
@@ -32,7 +32,7 @@ export type ShareScope = Readonly<{ id: string; origin: string; accountId: strin
 export type SharePrepare = ShareScope & Readonly<{ newAttempt?: boolean; operation?: string }>;
 export type ShareInspection = Readonly<{
   id: string;
-  local?: { id: string; generation: string; size: number; expiresAt: number; url: string };
+  local?: { id: string; generation: string; size: number; url: string } & SnapshotRetention;
   attempts: readonly ShareAttempt[];
   hasMore: boolean;
 }>;

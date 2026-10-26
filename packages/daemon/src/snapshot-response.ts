@@ -2,6 +2,8 @@ import { validateDocumentId } from "@planview/core";
 import {
   validateSnapshotSelection,
   type SnapshotDeleteResult,
+  type SnapshotRetention,
+  type SnapshotPinResult,
   type SnapshotInventory,
   type SnapshotUsage,
 } from "@planview/storage";
@@ -22,6 +24,28 @@ const selection = (value: unknown) => {
     throw new Error("Invalid daemon snapshot selection.");
   return validateSnapshotSelection({ id: row["id"], generation: row["generation"] });
 };
+export const retentionFromPayload = (value: unknown): SnapshotRetention => {
+  const row = record(value);
+  const pinned = row["pinned"];
+  const unpinnedExpiresAt = integer(row["unpinnedExpiresAt"]);
+  if (typeof pinned !== "boolean" || row["expiresAt"] !== (pinned ? null : unpinnedExpiresAt))
+    throw new Error("Invalid daemon retention state.");
+  return { pinned, unpinnedExpiresAt, expiresAt: pinned ? null : unpinnedExpiresAt };
+};
+export const pinFromPayload = (value: unknown): SnapshotPinResult => {
+  const row = record(value);
+  const status = row["status"];
+  if (
+    typeof status !== "string" ||
+    !["updated", "stale", "not_found", "unavailable"].includes(status)
+  )
+    throw new Error("Invalid daemon pin response.");
+  return {
+    ...selection(row),
+    status: status as SnapshotPinResult["status"],
+    ...(status === "updated" ? { retention: retentionFromPayload(row["retention"]) } : {}),
+  };
+};
 export const inventoryFromPayload = (value: unknown): SnapshotInventory => {
   const payload = record(value);
   if (!Array.isArray(payload["snapshots"]) || payload["snapshots"].length > 100)
@@ -31,14 +55,14 @@ export const inventoryFromPayload = (value: unknown): SnapshotInventory => {
       const row = record(value);
       const createdAt = integer(row["createdAt"]);
       const lastAccessedAt = integer(row["lastAccessedAt"]);
-      const expiresAt = integer(row["expiresAt"]);
-      if (lastAccessedAt < createdAt || expiresAt < lastAccessedAt)
+      const retention = retentionFromPayload(row);
+      if (lastAccessedAt < createdAt || retention.unpinnedExpiresAt < lastAccessedAt)
         throw new Error("Invalid daemon snapshot times.");
       return {
         ...selection(row),
         createdAt,
         lastAccessedAt,
-        expiresAt,
+        ...retention,
         size: integer(row["size"]),
       };
     }),
@@ -50,6 +74,8 @@ export const inventoryFromPayload = (value: unknown): SnapshotInventory => {
 export const usageFromPayload = (value: unknown): SnapshotUsage => {
   const row = record(value);
   return {
+    pinnedBytes: integer(row["pinnedBytes"]),
+    pinnedCount: integer(row["pinnedCount"]),
     bytes: integer(row["bytes"]),
     documentBytes: integer(row["documentBytes"]),
     metadataBytes: integer(row["metadataBytes"]),

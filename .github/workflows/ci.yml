@@ -185,6 +185,11 @@ jobs:
           TARBALL: ${{ steps.pack.outputs.tarball }}
         run: npm run test:upload:installed
 
+      - name: Test installed offline pins, restart, finite quota and concurrency
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node scripts/offline-retention-smoke.mjs
+
       - name: Install Chromium for the installed manager browser smoke
         run: npx playwright install --with-deps chromium
 

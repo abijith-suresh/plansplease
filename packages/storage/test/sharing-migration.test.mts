@@ -19,7 +19,7 @@ test("v2 to v3 preserves immutable generation and receipts persist independently
     const generation = storage.getDocumentMetadataSnapshot(id)!.generation;
     storage.close();
     const legacy = new DatabaseSync(path);
-    legacy.exec("DROP TABLE share_attempts; PRAGMA user_version = 2");
+    legacy.exec("DROP TABLE snapshot_pins; DROP TABLE share_attempts; PRAGMA user_version = 2");
     legacy.close();
     storage = Effect.runSync(openStorage(path));
     assert.equal(storage.getDocumentMetadataSnapshot(id)?.generation, generation);

@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect } from "effect";
+import { testInstalledRetention } from "./offline-retention-smoke.mjs";
 import { npmPackFilename } from "./npm-pack-result.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -349,6 +350,11 @@ const runSmoke = async () => {
     assertSuccessful(after, "stopped packed CLI status");
     assert.match(text(after.stdout), /not running/);
     await assert.rejects(fetch(manager.origin, { signal: AbortSignal.timeout(1000) }));
+    await testInstalledRetention({
+      root,
+      installed: join(installedRoot, "dist/index.js"),
+      workspace,
+    });
   } finally {
     if (execute !== undefined) {
       execute(["stop"]);

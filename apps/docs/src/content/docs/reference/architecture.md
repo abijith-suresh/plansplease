@@ -87,5 +87,7 @@ application operations as the native API. It owns no SQLite connection, cloud
 client or additional persistent process. Browser sessions and native daemon
 credentials are separate. Only packaged trusted assets run on the manager
 origin; arbitrary HTML snapshots remain on the preview origin. Both listeners
-share lifecycle and stop together. Profile controls and pinning remain separate
-phases; CLI sharing does not expose cloud credentials or mutation to the manager.
+share lifecycle and stop together. Generation-bound pin/unpin uses shared daemon
+operations and SQLite state; automatic cleanup checks current pins at final deletion.
+Pins count toward finite quota and do not renew access clocks. Profile controls
+remain pending; CLI sharing does not expose cloud credentials or mutation to the manager.

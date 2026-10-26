@@ -40,3 +40,10 @@ The package is not published to npm unless maintainers enable publishing.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for verification, Changeset, and release
 requirements. Hosted service availability and proposals are tracked in the
 [features reference](apps/docs/src/content/docs/reference/planned-features.md).
+
+
+Pin a selected immutable generation for offline use with `plansplease pin ID
+--generation GENERATION` from `plansplease list --json`. Pinned copies survive
+automatic cleanup within the finite 1 GiB quota. Unpin restores the original
+access-based expiry, so an already-expired copy may be cleaned promptly. Pins
+are not backups; manual local deletion and cloud deletion remain independent.

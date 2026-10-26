@@ -227,7 +227,7 @@ export const runDaemonCommandFromArgs = (
   );
 
 export const runInventoryCommand = (
-  command: "list" | "usage" | "delete",
+  command: "list" | "usage" | "delete" | "pin" | "unpin",
   application: LocalApplication,
   args: readonly string[],
   stdout: StdoutWriter
@@ -236,19 +236,26 @@ export const runInventoryCommand = (
     allowJson: true,
     helpTopic: command,
     valueOptions:
-      command === "list" ? ["--limit", "--after"] : command === "delete" ? ["--generation"] : [],
-    allowLeadingHyphenOperand: (argument) => command === "delete" && isValidDocumentId(argument),
+      command === "list"
+        ? ["--limit", "--after"]
+        : command === "delete" || command === "pin" || command === "unpin"
+          ? ["--generation"]
+          : [],
+    allowLeadingHyphenOperand: (argument) =>
+      (command === "delete" || command === "pin" || command === "unpin") &&
+      isValidDocumentId(argument),
   }).pipe(
     Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
       if (parsed.help) return writeHelp(stdout, command);
       if (
-        parsed.operands.length !== (command === "delete" ? 1 : 0) ||
-        (command === "delete" && parsed.named?.["--generation"] === undefined)
+        parsed.operands.length !== (["delete", "pin", "unpin"].includes(command) ? 1 : 0) ||
+        (["delete", "pin", "unpin"].includes(command) &&
+          parsed.named?.["--generation"] === undefined)
       ) {
         return Effect.fail(
           unexpectedArguments(
             parsed.operands,
-            `Expected ${command === "delete" ? "one id and --generation" : "no operands"}.\n\n${formatHelp(command)}`
+            `Expected ${["delete", "pin", "unpin"].includes(command) ? "one id and --generation" : "no operands"}.\n\n${formatHelp(command)}`
           )
         );
       }
@@ -269,7 +276,7 @@ export const runInventoryCommand = (
               page.snapshots
                 .map(
                   (row) =>
-                    `${row.id} ${row.generation} ${row.size} bytes expiresAt=${row.expiresAt}\n`
+                    `${row.id} ${row.generation} ${row.size} bytes pinned=${row.pinned} expiresAt=${row.expiresAt} unpinnedExpiresAt=${row.unpinnedExpiresAt}\n`
                 )
                 .join("") +
               (page.nextAfter === undefined ? "" : `Continue with --after ${page.nextAfter}\n`)
@@ -283,9 +290,23 @@ export const runInventoryCommand = (
             format,
             result,
             (usage) =>
-              `${usage.documentCount} snapshots, ${usage.bytes}/${usage.quotaBytes} logical bytes (${usage.documentBytes} document + ${usage.metadataBytes} metadata). Retention: ${usage.retentionMilliseconds / 86400000} days since last access.\n`
+              `${usage.documentCount} snapshots, ${usage.bytes}/${usage.quotaBytes} logical bytes (${usage.documentBytes} document + ${usage.metadataBytes} metadata). Pinned: ${usage.pinnedCount} snapshots, ${usage.pinnedBytes} logical bytes. Unpinned retention: ${usage.retentionMilliseconds / 86400000} days since last access.\n`
           );
           return 0;
+        }
+        if (command === "pin" || command === "unpin") {
+          const result = yield* application.setPinned(
+            { id: parsed.operands[0] ?? "", generation: parsed.named?.["--generation"] ?? "" },
+            command === "pin"
+          );
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (value) =>
+              `${value.id}: ${value.status}.${value.retention ? ` Pinned: ${value.retention.pinned}. Effective expiry: ${value.retention.expiresAt ?? "none while pinned"}. Unpinned expiry: ${value.retention.unpinnedExpiresAt}. Unpin may make an expired snapshot immediately eligible for cleanup.` : " Refresh list before retrying."}\n`
+          );
+          return result.status === "updated" ? 0 : 1;
         }
         const result = yield* application.deleteSnapshot({
           id: parsed.operands[0] ?? "",

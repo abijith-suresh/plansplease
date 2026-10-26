@@ -132,5 +132,8 @@ failure. Historical committed receipts can refer to subsequently deleted cloud
 documents and never recreate them. These are local source/test capabilities;
 compatible hosted app/backend rollout remains a separate operator action. Local snapshots allow 10 MiB, while
 cloud uploads allow 8 MiB. The existing local 30-day retention and 1 GiB quota
-do not promise permanent offline retention. Pinning and profile controls are
-separate pending work.
+do not promise permanent offline retention. Explicit generation-bound pin/unpin
+is available through the local CLI and manager within the finite quota. Sharing
+never pins automatically. Shared local outcomes expose pinned, expiresAt=null
+while pinned, and unpinnedExpiresAt for the original access clock. Profile controls
+remain pending.

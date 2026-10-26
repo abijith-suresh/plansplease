@@ -7,10 +7,14 @@ type Snapshot = {
   generation: string;
   size: number;
   createdAt: number;
-  expiresAt: number;
+  pinned: boolean;
+  expiresAt: number | null;
+  unpinnedExpiresAt: number;
 };
 type Page = { snapshots: Snapshot[]; nextAfter?: string };
 type Usage = {
+  pinnedBytes: number;
+  pinnedCount: number;
   bytes: number;
   documentBytes: number;
   metadataBytes: number;
@@ -142,6 +146,29 @@ function Shelf() {
       setNotice(`Saved ${result.id}. Open it from the shelf below.`);
       await load(undefined);
     });
+  const changePin = (snapshot: Snapshot) => {
+    if (
+      snapshot.pinned &&
+      !window.confirm(
+        `Unpin ${snapshot.id}? Original access-based expiry: ${date(snapshot.unpinnedExpiresAt)}. ${snapshot.unpinnedExpiresAt < Date.now() ? "It is already expired and may be cleaned promptly." : "Cleanup can remove it after that date."} This does not renew retention.`
+      )
+    )
+      return;
+    void work(async () => {
+      const result = await request<{ status: string }>(snapshot.pinned ? "unpin" : "pin", {
+        id: snapshot.id,
+        generation: snapshot.generation,
+      });
+      await load(cursor());
+      if (result.status !== "updated")
+        throw new Error(`${result.status}: Refresh and select an available generation.`);
+      setNotice(
+        snapshot.pinned
+          ? "Unpinned. Original access-based expiry restored; expired copies may be cleaned promptly."
+          : "Pinned for offline use within your 1 GiB quota. Manual deletion is still allowed. Keep a separate backup."
+      );
+    });
+  };
   const remove = () =>
     work(async () => {
       const snapshot = selected();
@@ -244,7 +271,7 @@ function Shelf() {
                 </button>
               </div>
               <p class="caption">
-                Immutable copies. Opening a preview renews its 30-day retention.
+                Pin a copy for offline use. Unpinned copies expire 30 days after last access.
               </p>
               <Show
                 when={page().snapshots.length > 0}
@@ -278,7 +305,12 @@ function Shelf() {
                           <code class="snapshot-id">{snapshot.id}</code>
                           <p>
                             {size(snapshot.size)} <span>·</span> Saved {date(snapshot.createdAt)}{" "}
-                            <span>·</span> Expires {date(snapshot.expiresAt)}
+                            <span>·</span>{" "}
+                            <span class={snapshot.pinned ? "pin-label" : ""}>
+                              {snapshot.pinned
+                                ? "Pinned · no automatic expiry"
+                                : `Expires ${date(snapshot.expiresAt!)}`}
+                            </span>
                           </p>
                         </div>
                         <div class="row-actions">
@@ -304,6 +336,15 @@ function Shelf() {
                             }
                           >
                             Copy link
+                          </button>
+                          <button
+                            type="button"
+                            class="quiet"
+                            disabled={busy()}
+                            aria-label={`${snapshot.pinned ? "Unpin" : "Pin"} ${snapshot.id}`}
+                            onClick={() => changePin(snapshot)}
+                          >
+                            {snapshot.pinned ? "Unpin" : "Pin for offline"}
                           </button>
                           <button
                             type="button"
@@ -392,11 +433,15 @@ function Shelf() {
                   value={usage()?.bytes ?? 0}
                 />
                 <p>
-                  30 days since last access.
+                  Unpinned: 30 days since last access.
                   <br />
-                  Expired copies are removed during cleanup.
+                  Pinned copies survive automatic cleanup and count toward this limit.
                 </p>
                 <dl>
+                  <div>
+                    <dt>Pinned ({usage()?.pinnedCount ?? 0})</dt>
+                    <dd>{size(usage()?.pinnedBytes ?? 0)}</dd>
+                  </div>
                   <div>
                     <dt>Snapshot bytes</dt>
                     <dd>{size(usage()?.documentBytes ?? 0)}</dd>
@@ -407,7 +452,8 @@ function Shelf() {
                   </div>
                 </dl>
                 <p class="fine-print">
-                  Logical committed storage. Temporary files and disk allocation are excluded.
+                  Full quota can refuse new saves. Pins are never silently evicted. Pinning is not a
+                  backup. Temporary files and disk allocation are excluded.
                 </p>
               </section>
             </aside>
@@ -503,8 +549,8 @@ function DeleteDialog(props: {
       <h2 id="delete-heading">Take it off the shelf?</h2>
       <code>{props.snapshot.id}</code>
       <p>
-        This removes one immutable local snapshot. Its preview link stops working. Any cloud copy is
-        kept separately.
+        This removes one immutable local snapshot, including a pinned copy. Its preview link stops
+        working. Any cloud copy is kept separately.
       </p>
       <p class="fine-print">
         Active readers may keep it busy. You will see the result before retrying.

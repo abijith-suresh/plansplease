@@ -63,6 +63,8 @@ import {
   DAEMON_INVENTORY_PATH,
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
+  DAEMON_PIN_PATH,
+  DAEMON_UNPIN_PATH,
   DAEMON_MANAGER_PATH,
   DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS,
   DAEMON_DOCUMENT_READ_MAX_DURATION_MS,
@@ -79,6 +81,7 @@ import {
   type DaemonStatusPayload,
 } from "./http-routes.js";
 import {
+  pinFromPayload,
   inventoryFromPayload,
   usageFromPayload,
   deletionFromPayload,
@@ -96,6 +99,8 @@ export {
   DAEMON_INVENTORY_PATH,
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
+  DAEMON_PIN_PATH,
+  DAEMON_UNPIN_PATH,
   DAEMON_MANAGER_PATH,
   DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS,
   DAEMON_DOCUMENT_READ_MAX_DURATION_MS,
@@ -2123,6 +2128,23 @@ export const deleteDaemonSnapshot = (
       JSON.stringify(selection)
     );
   });
+
+export const setDaemonSnapshotPinned = (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  input: SnapshotSelection,
+  pinned: boolean
+) =>
+  daemonEffect(DAEMON_PIN_PATH, (signal) =>
+    snapshotRequest(
+      config,
+      options,
+      pinned ? DAEMON_PIN_PATH : DAEMON_UNPIN_PATH,
+      pinFromPayload,
+      signal,
+      JSON.stringify(validateSnapshotSelection(input))
+    )
+  );
 
 export const launchDaemonManager = (config: DaemonConfig, options: StartDaemonOptions) =>
   daemonEffect(DAEMON_MANAGER_PATH, async (signal) => {
