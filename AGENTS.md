@@ -6,6 +6,7 @@ plansplease is a TypeScript ESM monorepo for turning HTML files and artifact fol
 Core promise: one command turns an HTML file or folder into a durable, immutable URL, and the same artifact can be shared through the cloud workspace.
 Non-goals: a production cloud domain, public npm publishing before the owner enables it, and any filesystem, network, or cloud I/O in Core. `@planview/core` resolves paths and holds shared document policy; adapters (`local`, `daemon`, `storage`, `app`) own all I/O.
 Local snapshot inventory and logical storage usage belong to the daemon. The local application and CLI may list bounded metadata pages and delete a selected immutable generation through the existing storage locks and recovery operations. Listing does not refresh retention. Local management never uploads or deletes cloud documents.
+The optional local manager serves bundled static assets on a separate loopback origin in the same daemon process. Browser sessions are independent of the native daemon secret. Manager start and browser opening are explicit; stopping the daemon stops both listeners.
 Status: live, alpha.
 
 ## Sources of Truth

@@ -153,6 +153,7 @@ test("command options reject unknown flags before doing work", () => {
     ["publish", "--unknown"],
     ["login", "--unknown"],
     ["start", "--unknown"],
+    ["ui", "--unknown"],
   ] as const;
 
   for (const args of commands) {
@@ -1053,6 +1054,28 @@ test("inventory CLI validates input before starting and deletes only a listed ge
     assert.equal(executeInFixture("get", id).status, 1);
     assert.deepEqual(JSON.parse(executeInFixture("list", "--json").stdout), { snapshots: [] });
     assert.equal(JSON.parse(executeInFixture("usage", "--json").stdout).bytes, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("ui help and malformed options leave both listeners stopped", async () => {
+  const { runtimeDir, executeInFixture, cleanup } = await createLocalFixture("manager-discovery");
+  try {
+    const help = executeInFixture("ui", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /separate loopback manager listener/);
+    assert.equal(existsSync(join(runtimeDir, "daemon.json")), false);
+    for (const args of [
+      ["ui", "extra"],
+      ["ui", "--force"],
+      ["ui", "--limit", "1"],
+    ]) {
+      const result = executeInFixture(...args, "--json");
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, "");
+      assert.equal(existsSync(join(runtimeDir, "daemon.json")), false);
+    }
   } finally {
     await cleanup();
   }

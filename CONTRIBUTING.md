@@ -83,3 +83,33 @@ npm run verify
 npm run changeset:status
 npm run pack:check
 ```
+
+
+## Installed manager browser checks
+
+The local manager is built with the CLI's `build:manager` step. It uses stable
+Solid and Vite to produce static assets under `apps/cli/dist/manager`; no dev
+server is part of the installed runtime. UI TypeScript is checked separately
+with `apps/cli/ui/tsconfig.json`.
+
+Install the test browser once, then run the installed-package browser exercise:
+
+```sh
+npx playwright install chromium
+npm run test:manager:browser
+```
+
+The script packs and installs into an isolated prefix with lifecycle scripts
+disabled, uses an unrelated cwd, and tests the actual compiled UI in Chromium.
+It covers independent sessions, Host/Origin isolation from a hostile preview,
+exact-byte import, open/copy/delete, logout/reconnection and shutdown of both
+listeners. Set `PLANVIEW_BROWSER_ARTIFACT_DIR` to save desktop/mobile screenshots;
+with that option it also checks mobile horizontal overflow. CI passes its already
+built `TARBALL` to the same script to reuse packaging verification. The existing
+Windows/macOS packed smoke covers assets, native session exchange, import/delete,
+process reuse and two-listener shutdown. Actual corporate-laptop browser policies
+remain a separate manual check.
+
+Do not run `cross-platform-smoke.mjs` concurrently with source tests: it clears
+build outputs to verify a clean package build. Browser checks use no cloud token,
+external document endpoint or hosted service.

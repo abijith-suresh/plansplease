@@ -109,3 +109,14 @@ For an explicitly requested local deletion, use `plansplease delete ID
 reads return retained; stale generations require a fresh selection. Partial
 outcomes report `recovery: "clean"` and require bounded reconciliation, possibly
 after the orphan grace period. Local deletion never deletes a cloud copy.
+
+
+For an explicitly requested human browser manager, run `plansplease ui` and give
+the user its private one-use launch link, or use `ui --open` only when opening
+the browser is requested. Launch codes expire after one minute; browser sessions
+remain in page memory for up to eight hours. Never log or share these links
+outside the current user session. `ui --json` returns url, origin and expiresAt.
+The UI and previews use separate origins within the same daemon. Stopping the
+daemon stops both. There is no browser query editor, cloud mutation, folder
+import or profile switcher in this slice. Agents should continue using the CLI's
+bounded list/usage/delete operations directly.

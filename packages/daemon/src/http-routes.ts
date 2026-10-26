@@ -5,7 +5,6 @@ import { DEFAULT_PROFILE_NAME, validateDocumentId, type DocumentId } from "@plan
 import {
   validateSnapshotListOptions,
   validateSnapshotSelection,
-  createSnapshotManagement,
   DocumentPublicationNotFoundError,
   DocumentPublicationReadError,
   type DocumentCleanupResult,
@@ -21,7 +20,8 @@ import {
 } from "./configuration.js";
 import { DocumentReadAdmissionError, type DocumentReadPermit } from "./document-read-admission.js";
 import type { DaemonHttpRequestHandler } from "./http-server.js";
-import type { OperationGate } from "./operation-gate.js";
+import type { DaemonApplication } from "./application.js";
+import type { ManagerLaunch } from "./manager.js";
 
 export const DAEMON_SECRET_HEADER = "x-planview-secret";
 export const DAEMON_READY_PATH = "/__planview/ready";
@@ -32,6 +32,7 @@ export const DAEMON_PUBLISH_PATH = "/__planview/publish";
 export const DAEMON_INVENTORY_PATH = "/__planview/snapshots";
 export const DAEMON_USAGE_PATH = "/__planview/usage";
 export const DAEMON_DELETE_PATH = "/__planview/delete";
+export const DAEMON_MANAGER_PATH = "/__planview/manager";
 export const DAEMON_CLEAN_PATH = "/__planview/clean";
 /** Slow consumers are allowed to backpressure, but not to remain completely idle forever. */
 export const DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS = 30_000;
@@ -70,11 +71,11 @@ export type DaemonHttpRouteOptions = Readonly<{
   readonly requestShutdown: () => void;
   readonly publicationCoordinator: DocumentPublicationCoordinator;
   readonly metadataStore: MetadataStore;
-  readonly snapshotManagement: ReturnType<typeof createSnapshotManagement>;
+  readonly application: DaemonApplication;
+  readonly launchManager: (signal?: AbortSignal) => Promise<ManagerLaunch>;
   readonly runCleanup: (signal?: AbortSignal) => Promise<DocumentCleanupResult>;
   readonly isReady: () => boolean;
   readonly documentReadAdmission: DocumentReadAdmission;
-  readonly operationGate: OperationGate;
   readonly acknowledgeStartup: () => void;
   readonly isTestProcess: () => boolean;
   readonly wait: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
@@ -170,6 +171,7 @@ const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_INVENTORY_PATH,
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
+  DAEMON_MANAGER_PATH,
   "/internal/clean",
   "/internal/ready",
   "/internal/status",
@@ -389,10 +391,10 @@ const handleRequest = async (
     publicationCoordinator,
     metadataStore,
     runCleanup,
-    snapshotManagement,
+    application,
+    launchManager,
     isReady,
     documentReadAdmission,
-    operationGate,
     acknowledgeStartup,
     isTestProcess,
     wait,
@@ -577,6 +579,10 @@ const handleRequest = async (
     requestShutdown();
     return;
   }
+  if (url === DAEMON_MANAGER_PATH && request.method === "POST") {
+    response(res, 200, JSON.stringify(await launchManager(requestSignal)));
+    return;
+  }
   if (url === DAEMON_INVENTORY_PATH && request.method === "GET") {
     let options: ReturnType<typeof validateSnapshotListOptions>;
     try {
@@ -596,11 +602,11 @@ const handleRequest = async (
       response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
       return;
     }
-    response(res, 200, JSON.stringify(await Effect.runPromise(snapshotManagement.list(options))));
+    response(res, 200, JSON.stringify(await application.list(options)));
     return;
   }
   if (url === DAEMON_USAGE_PATH && request.method === "GET") {
-    response(res, 200, JSON.stringify(await Effect.runPromise(snapshotManagement.usage())));
+    response(res, 200, JSON.stringify(await application.usage()));
     return;
   }
   if (url === DAEMON_DELETE_PATH && request.method === "POST") {
@@ -624,10 +630,7 @@ const handleRequest = async (
         response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
       return;
     }
-    const result = await operationGate(
-      (signal) => Effect.runPromise(snapshotManagement.deleteSnapshot(selection, signal)),
-      requestSignal
-    );
+    const result = await application.deleteSnapshot(selection, requestSignal);
     response(res, 200, JSON.stringify(result));
     return;
   }
@@ -689,13 +692,7 @@ const handleRequest = async (
           );
         }
       }
-      const published = await operationGate(
-        (signal) =>
-          Effect.runPromise(publicationCoordinator.publish(sourcePath, signal), {
-            signal: requestSignal,
-          }),
-        requestSignal
-      );
+      const published = await application.publishSource(sourcePath, requestSignal);
       // Keep this response synchronous: 201 means the publication is committed
       // and can be retrieved immediately by its immutable id.
       response(res, 201, JSON.stringify({ id: published.id }));

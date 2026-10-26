@@ -102,6 +102,60 @@ means the metadata state could not be established; list again before choosing
 any retry. No automatic retry or cloud deletion occurs. If a response is lost, list again and use cleanup
 for residual storage; never substitute a different generation in a blind retry.
 
+## Local browser manager
+
+```sh
+plansplease ui
+plansplease ui --open
+plansplease --profile work ui
+```
+
+`ui` explicitly starts a manager listener in the selected profile's existing
+Node daemon and prints a private, one-use launch link. It does not open a browser
+unless `--open` is given. Publishing, help, version and status do not start the
+manager. The compiled Solid/Vite HTML, CSS and JavaScript ship with the CLI;
+there is no frontend dev server or second persistent Node process.
+
+The manager uses a separate `127.0.0.1` port from HTML previews. Its launch code
+is in the URL fragment, never a query string, and expires after one minute.
+The page removes the fragment before making requests and exchanges it for an
+independent browser session. Treat the launch link as private. Sessions last up
+to eight hours and stay only in page memory: no cookies, localStorage or
+sessionStorage authority. Reloading requires a fresh `plansplease ui` link.
+Signing out revokes only that browser session; previews continue running.
+At most eight unused launch codes and eight browser sessions can exist per
+daemon. Wait for code expiry, sign out of another session, or restart the daemon
+if a limit is reached.
+
+Use the shelf to list snapshots, open them on their preview origin, copy links,
+delete a selected immutable generation, inspect logical quota/retention, and
+import one `.html` or `.htm` file up to 10 MiB. Import keeps the exact bytes and
+uses the existing publication and quota operations. It cannot read an absolute
+browser-supplied path, import a folder bundle, or execute artifact HTML on the
+manager origin. Temporary source files are removed after each import attempt.
+If an import response is lost, refresh inventory before selecting the file
+again. Do not assume a failed response means publication did not commit.
+
+Inventory is paged at 50 rows and does not extend retention. Preview reads can
+extend the fixed 30-day last-access period. The 1 GiB quota includes committed
+snapshot bytes plus 4 KiB per metadata row; it is not a physical disk-usage
+measurement. Active readers may prevent selected deletion. Partial results
+retain their existing cleanup/inspection guidance, including orphan recovery
+grace. The manager shows the active profile and storage path; profile creation,
+switching and policy controls remain a separate slice.
+
+The manager remains available after the CLI exits. **Stop daemon & previews**,
+`plansplease stop`, or a daemon shutdown stops both listeners. Stored snapshots
+remain on disk under the existing retention policy. Starting again requires a
+fresh launch link. After replacing an installation, restart its owned daemon
+to load the new code and assets.
+
+The manager validates the exact Host and Origin and authenticates reads and
+mutations. Published scripts cannot use its API. Browser session tokens cannot
+control the native daemon API, and the daemon secret is never given to the
+browser. There is no permissive CORS or ambient localhost-cookie authority.
+The cloud app, hosted MCP, cloud uploads and cloud deletions remain separate.
+
 ## Cloud uploads
 
 Hosted services are currently offline; see the

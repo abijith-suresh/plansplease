@@ -96,6 +96,15 @@ Partial failures require clean for bounded reconciliation, possibly after the
 orphan recovery grace period. Deletion exits 1 for stale, retained or partial;
 missing metadata returns not_found and exit 0 without claiming residual files are gone.
 .TP
+.B ui [--open] [--json]
+Start an optional browser manager in the existing daemon and print a private,
+one-use launch link. Browser opening is explicit with --open. The manager has
+a distinct loopback origin and independent in-memory browser sessions. It lists,
+opens, copies, deletes selected generations, shows storage/retention, and imports
+standalone HTML up to 10 MiB. Launch codes expire after one minute; sessions last
+up to eight hours. Reloading needs a fresh link. Stop daemon & previews or
+plansplease stop shuts down both listeners. No cloud action occurs.
+.TP
 .B help [command]
 Show help for the whole CLI or for one command.
 .SH AGENT SKILLS
@@ -129,6 +138,8 @@ Open the returned URL in the default browser. Supported by
 .B publish
 and
 .B upload
+and
+.B ui
 .
 .TP
 .B \-\-cloud-url origin
@@ -163,6 +174,8 @@ and
 .B usage
 , and
 .B delete
+, and
+.B ui
 .
 .TP
 .B \-\-

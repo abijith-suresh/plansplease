@@ -1,5 +1,7 @@
 import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import {
+  launchDaemonManager,
+  type ManagerLaunch,
   listDaemonSnapshots,
   getDaemonStorageUsage,
   deleteDaemonSnapshot,
@@ -35,6 +37,7 @@ export type LocalOperation =
   | "restart"
   | "inspect"
   | "clean"
+  | "ui"
   | "list"
   | "usage"
   | "delete";
@@ -80,6 +83,7 @@ export type LocalGetOptions = Readonly<{
 }>;
 
 export type LocalApplication = Readonly<{
+  readonly manager: () => Effect.Effect<ManagerLaunch, LocalApplicationFailure>;
   readonly list: (
     options?: SnapshotListOptions
   ) => Effect.Effect<SnapshotInventory, LocalApplicationFailure>;
@@ -257,7 +261,21 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
     withConfig("delete", resolveConfig, (config) =>
       deleteDaemonSnapshot(config, daemonOptions, input)
     );
-  return { publish, get, start, stop, restart, inspect, clean, list, usage, deleteSnapshot };
+  const manager = () =>
+    withConfig("ui", resolveConfig, (config) => launchDaemonManager(config, daemonOptions));
+  return {
+    manager,
+    publish,
+    get,
+    start,
+    stop,
+    restart,
+    inspect,
+    clean,
+    list,
+    usage,
+    deleteSnapshot,
+  };
 };
 
 export {

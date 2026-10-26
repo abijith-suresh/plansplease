@@ -63,6 +63,7 @@ import {
   DAEMON_INVENTORY_PATH,
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
+  DAEMON_MANAGER_PATH,
   DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS,
   DAEMON_DOCUMENT_READ_MAX_DURATION_MS,
   DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS,
@@ -82,6 +83,8 @@ import {
   usageFromPayload,
   deletionFromPayload,
 } from "./snapshot-response.js";
+import { createDaemonApplication } from "./application.js";
+import { openManager, type ManagerServer, type ManagerLaunch } from "./manager.js";
 import { createOperationGate } from "./operation-gate.js";
 
 export {
@@ -89,6 +92,7 @@ export {
   DAEMON_INVENTORY_PATH,
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
+  DAEMON_MANAGER_PATH,
   DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS,
   DAEMON_DOCUMENT_READ_MAX_DURATION_MS,
   DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS,
@@ -851,6 +855,7 @@ const openDaemon = async (config: DaemonConfig) => {
     }
   }
   let httpServer: DaemonHttpServer | undefined;
+  let managerServer: ManagerServer | undefined;
   let descriptor: RuntimeDescriptor | undefined;
   let storageScope: Scope.Closeable | undefined;
   let cleanupTimer: NodeJS.Timeout | undefined;
@@ -892,6 +897,7 @@ const openDaemon = async (config: DaemonConfig) => {
     documentReadAdmission.close();
     operationGate.close();
     stopAccepting();
+    managerServer?.revoke();
     shutdownAbortTimer = setTimeout(() => {
       operationGate.abortActive();
       abortRequests();
@@ -1002,6 +1008,36 @@ const openDaemon = async (config: DaemonConfig) => {
         return result;
       });
     };
+    const snapshots = createSnapshotManagement({
+      metadataStore: openedMetadataStore,
+      documentFileStore: openedDocumentFileStore,
+    });
+    const application = createDaemonApplication({
+      publication: publicationCoordinator,
+      snapshots,
+      operationGate,
+    });
+    const launchManager = (requestSignal?: AbortSignal) =>
+      operationGate(async (signal) => {
+        signal.throwIfAborted();
+        if (managerServer === undefined) {
+          managerServer = await openManager({
+            application,
+            profile: config.profile,
+            appDataDir: config.appDataDir,
+            previewOrigin: `http://127.0.0.1:${runtimeDescriptor.port}`,
+            requestShutdown,
+            isShuttingDown: () => shutdownInitiated,
+          });
+          if (signal.aborted || shutdownInitiated) {
+            managerServer.revoke();
+            managerServer.stopAccepting();
+            await managerServer.close();
+            throw new Error("Daemon stopped during manager startup.");
+          }
+        }
+        return managerServer.launch();
+      }, requestSignal);
     const runtimeDescriptor = {
       version: DAEMON_DESCRIPTOR_VERSION as typeof DAEMON_DESCRIPTOR_VERSION,
       pid: process.pid,
@@ -1019,13 +1055,10 @@ const openDaemon = async (config: DaemonConfig) => {
         publicationCoordinator,
         metadataStore: openedMetadataStore,
         runCleanup,
-        snapshotManagement: createSnapshotManagement({
-          metadataStore: openedMetadataStore,
-          documentFileStore: openedDocumentFileStore,
-        }),
+        application,
+        launchManager,
         isReady: () => startupReady,
         documentReadAdmission,
-        operationGate,
         acknowledgeStartup,
         isTestProcess,
         wait,
@@ -1039,10 +1072,21 @@ const openDaemon = async (config: DaemonConfig) => {
       }
     );
     httpServer = daemonHttpServer;
-    stopAccepting = daemonHttpServer.stopAccepting;
-    forceCloseConnections = daemonHttpServer.forceClose;
-    abortRequests = daemonHttpServer.abortRequests;
-    waitForRequests = daemonHttpServer.waitForRequests;
+    stopAccepting = () => {
+      daemonHttpServer.stopAccepting();
+      managerServer?.stopAccepting();
+    };
+    forceCloseConnections = () => {
+      daemonHttpServer.forceClose();
+      managerServer?.forceClose();
+    };
+    abortRequests = () => {
+      daemonHttpServer.abortRequests();
+      managerServer?.abortRequests();
+    };
+    waitForRequests = async () => {
+      await Promise.all([daemonHttpServer.waitForRequests(), managerServer?.waitForRequests()]);
+    };
     const actualPort = await daemonHttpServer.listen(
       config.host,
       config.port,
@@ -1116,7 +1160,7 @@ const openDaemon = async (config: DaemonConfig) => {
               }
             };
 
-            const serverClose = runningHttpServer.close();
+            const serverClose = Promise.all([runningHttpServer.close(), managerServer?.close()]);
             const workSettled = await settleBeforeDeadline(
               Promise.all([operationGate.waitForIdle(), waitForRequests()])
             );
@@ -1201,6 +1245,11 @@ const openDaemon = async (config: DaemonConfig) => {
     }
     documentReadAdmission.close();
     await lock.release().catch(() => undefined);
+    if (managerServer !== undefined) {
+      managerServer.revoke();
+      managerServer.forceClose();
+      await managerServer.close().catch(() => undefined);
+    }
     if (httpServer !== undefined) {
       await httpServer.close().catch(() => undefined);
     }
@@ -2059,3 +2108,40 @@ export const deleteDaemonSnapshot = (
       JSON.stringify(selection)
     );
   });
+
+export const launchDaemonManager = (config: DaemonConfig, options: StartDaemonOptions) =>
+  daemonEffect(DAEMON_MANAGER_PATH, async (signal) => {
+    const running = await startDetachedDaemonPromise(config, options, signal);
+    const answer = await request(
+      running.descriptor,
+      "POST",
+      DAEMON_MANAGER_PATH,
+      "{}",
+      10_000,
+      signal,
+      16 * 1024
+    );
+    const payload = parseResponse<Record<string, unknown>>(answer, DAEMON_MANAGER_PATH, 200);
+    const url = new URL(String(payload["url"]));
+    if (
+      url.protocol !== "http:" ||
+      url.hostname !== "127.0.0.1" ||
+      url.port === "" ||
+      url.port === String(running.descriptor.port) ||
+      url.pathname !== "/" ||
+      url.search !== "" ||
+      !/^#[A-Za-z0-9_-]{43}$/.test(url.hash) ||
+      url.username ||
+      url.password ||
+      payload["origin"] !== url.origin ||
+      typeof payload["expiresAt"] !== "number" ||
+      !Number.isSafeInteger(payload["expiresAt"])
+    )
+      throw new Error("The daemon returned an invalid manager launch link.");
+    return {
+      url: url.href,
+      origin: url.origin,
+      expiresAt: payload["expiresAt"],
+    } satisfies ManagerLaunch;
+  });
+export type { ManagerLaunch } from "./manager.js";
