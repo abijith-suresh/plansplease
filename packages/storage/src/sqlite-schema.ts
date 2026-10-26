@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { inTransaction, readInteger, readText, rowValue } from "./sqlite-primitives.js";
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 const DOCUMENT_COLUMNS = ["id", "createdAt", "lastAccessedAt", "size"] as const;
 const DOCUMENT_INDEX_NAME = "documents_last_accessed_at_idx";
@@ -41,6 +41,11 @@ export const SHARE_SCHEMA = `
   ) STRICT
 `;
 export const SHARE_INDEX_SCHEMA = `CREATE INDEX share_scope_idx ON share_attempts (localId, origin, accountId)`;
+
+export const PIN_SCHEMA = `CREATE TABLE snapshot_pins (
+  id TEXT PRIMARY KEY NOT NULL,
+  generation TEXT NOT NULL
+) STRICT`;
 
 const normalizeSchemaSql = (sql: string) => sql.replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -145,12 +150,12 @@ const validateV1Schema = (database: DatabaseSync) => {
   validateIndex(database, false, 1);
 };
 
-const validateV2Schema = (database: DatabaseSync, shares = false) => {
+const validateV2Schema = (database: DatabaseSync, shares = false, pins = false) => {
   const unexpectedObject = database
     .prepare(
       `SELECT type, name FROM sqlite_schema
        WHERE name NOT LIKE 'sqlite_%'
-         AND NOT (type = 'table' AND name IN ('documents', '${GENERATION_TABLE_NAME}'${shares ? ", 'share_attempts'" : ""}))
+         AND NOT (type = 'table' AND name IN ('documents', '${GENERATION_TABLE_NAME}'${shares ? ", 'share_attempts'" : ""}${pins ? ", 'snapshot_pins'" : ""}))
          AND NOT (type = 'index' AND name IN ('${DOCUMENT_INDEX_NAME}'${shares ? ", 'share_scope_idx'" : ""}))`
     )
     .get();
@@ -201,9 +206,15 @@ export const migrate = (database: DatabaseSync) =>
       "user_version"
     );
 
-    if (version !== 0 && version !== 1 && version !== 2 && version !== CURRENT_SCHEMA_VERSION) {
+    if (
+      version !== 0 &&
+      version !== 1 &&
+      version !== 2 &&
+      version !== 3 &&
+      version !== CURRENT_SCHEMA_VERSION
+    ) {
       throw new Error(
-        `Database schema version ${version} is not supported; expected 0, 1, 2, or ${CURRENT_SCHEMA_VERSION}.`
+        `Database schema version ${version} is not supported; expected 0, 1, 2, 3, or ${CURRENT_SCHEMA_VERSION}.`
       );
     }
 
@@ -230,13 +241,18 @@ export const migrate = (database: DatabaseSync) =>
     database.exec(
       `CREATE INDEX IF NOT EXISTS ${DOCUMENT_INDEX_NAME} ON documents (lastAccessedAt, id)`
     );
-    if (version !== CURRENT_SCHEMA_VERSION) {
+    if (version < 3) {
       validateV2Schema(database);
       database.exec(SHARE_SCHEMA);
       database.exec(SHARE_INDEX_SCHEMA);
     }
-    validateV2Schema(database, true);
+    if (version < 4) {
+      validateV2Schema(database, true);
+      database.exec(PIN_SCHEMA);
+    }
+    validateV2Schema(database, true, true);
     for (const [name, expected] of [
+      ["snapshot_pins", PIN_SCHEMA],
       ["share_attempts", SHARE_SCHEMA],
       ["share_scope_idx", SHARE_INDEX_SCHEMA],
     ]) {
@@ -244,7 +260,7 @@ export const migrate = (database: DatabaseSync) =>
         "sql"
       ];
       if (typeof sql !== "string" || normalizeSchemaSql(sql) !== normalizeSchemaSql(expected!))
-        throw new Error("Invalid sharing schema.");
+        throw new Error("Invalid metadata schema.");
     }
     database.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
   });

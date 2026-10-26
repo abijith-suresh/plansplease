@@ -7,7 +7,7 @@ import {
 } from "@planview/core";
 import { parseCloudBundle } from "@planview/core/cloud-bundle";
 import {
-  V1_RETENTION_MILLISECONDS,
+  snapshotRetention,
   validateShareScope,
   type MetadataStore,
   type DocumentPublicationCoordinator,
@@ -50,7 +50,7 @@ export function createDaemonSharing({
               id,
               generation: local.generation,
               size: local.size,
-              expiresAt: local.lastAccessedAt + V1_RETENTION_MILLISECONDS,
+              ...snapshotRetention(local),
               url: `${origin()}/${id}`,
             },
           }

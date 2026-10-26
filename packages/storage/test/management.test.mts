@@ -175,7 +175,16 @@ test("unlink failure is a partial outcome, hidden immediately, and recoverable a
   await fixture(
     async (env) => {
       const selected = await publish(env);
+      assert.equal(
+        (await run(createSnapshotManagement(env).setPinned(selected, true))).status,
+        "updated"
+      );
+      assert.equal(env.metadataStore.getPinnedStorageUsage().pinnedCount, 1);
       const result = await run(createSnapshotManagement(env).deleteSnapshot(selected));
+      assert.deepEqual(env.metadataStore.getPinnedStorageUsage(), {
+        pinnedBytes: 0,
+        pinnedCount: 0,
+      });
       assert.equal(result.status, "partial");
       assert.equal(result.recovery, "clean");
       assert.equal(result.removedMetadata, true);
@@ -203,6 +212,7 @@ test("unlink failure is a partial outcome, hidden immediately, and recoverable a
         assert.equal(recovered.removedDocumentFiles, 1);
         assert.equal(recovered.reclaimedBytes, Buffer.byteLength("original"));
         assert.equal(reopened.getDocumentMetadata(selected.id), undefined);
+        assert.deepEqual(reopened.getPinnedStorageUsage(), { pinnedBytes: 0, pinnedCount: 0 });
       } finally {
         reopened.close();
         await reopenedFiles.close();

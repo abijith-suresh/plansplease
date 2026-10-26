@@ -32,6 +32,7 @@ export type DocumentMetadataSnapshot = Readonly<
   DocumentMetadata & {
     /** Immutable token for conditional cleanup deletion. */
     readonly generation: string;
+    readonly pinned: boolean;
   }
 >;
 
@@ -75,6 +76,12 @@ export class StorageInvariantError extends Data.TaggedError("StorageInvariantErr
 }> {}
 
 export interface MetadataStore {
+  /** Conditional generation mutation; never updates the access clock. */
+  readonly setDocumentPinned: (
+    selection: { id: string; generation: string },
+    pinned: boolean
+  ) => "updated" | "not_found" | "stale";
+  readonly getPinnedStorageUsage: () => { pinnedBytes: number; pinnedCount: number };
   readonly getShareAttempt: (key: string) => ShareAttempt | undefined;
   readonly latestShareAttempt: (scope: ShareScope) => ShareAttempt | undefined;
   readonly listShareAttempts: (id: string) => {
@@ -107,11 +114,14 @@ export interface MetadataStore {
   readonly getDocumentAggregate: () => DocumentAggregate;
   readonly getDocumentStorageUsage: () => DocumentStorageUsage;
   readonly deleteDocument: (id: string) => boolean;
-  /** Deletes only if the row is still older than the supplied retention cutoff. */
+  /** Automatic expiry deletion, fenced against current pins and refreshed access. */
   readonly deleteDocumentIfLastAccessedBefore: (
     candidate: string | DocumentMetadataSnapshot,
     cutoff: number
   ) => DocumentMetadata | undefined;
-  /** Deletes only when every immutable field and generation still match. */
-  readonly deleteDocumentIfMatches: (metadata: DocumentMetadataMatch) => boolean;
+  /** Deletes only when fields/generation match. Automatic recovery also refuses current pins. */
+  readonly deleteDocumentIfMatches: (
+    metadata: DocumentMetadataMatch,
+    automatic?: boolean
+  ) => boolean;
 }

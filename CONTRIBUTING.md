@@ -113,3 +113,14 @@ remain a separate manual check.
 Do not run `cross-platform-smoke.mjs` concurrently with source tests: it clears
 build outputs to verify a clean package build. Browser checks use no cloud token,
 external document endpoint or hosted service.
+
+
+The installed offline-retention exercise runs with `node scripts/offline-retention-smoke.mjs`
+after building the CLI. `TARBALL` reuses an already verified package. It seeds an
+isolated profile through storage APIs while the daemon is stopped, closes that
+fixture owner, then exercises only the installed CLI/HTTP operations. The fixture
+fills the real 1 GiB logical quota with matching sparse files and expired pins,
+checks quota refusal for publication/import, restart, unpin expiry, explicit
+delete, concurrent mutations and exact bundle bytes. The same exercise runs in
+native Windows/macOS packed smoke and Linux packaging CI. It changes no runtime
+quota, retention clock or shared settings.

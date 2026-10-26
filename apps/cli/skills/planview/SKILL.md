@@ -38,7 +38,7 @@ plansplease publish --json ./report.html
 use the browser to view a folder's `index.html` and asset paths.
 
 The daemon starts on demand. `start`, `status`, `stop`, `restart`, and `clean` manage
-it; `status` is read-only. Local snapshots expire after 30 days without access.
+it; `status` is read-only. Unpinned local snapshots expire after 30 days without access.
 
 ## Cloud upload from the CLI
 
@@ -143,3 +143,18 @@ receipt-write uncertainty after cloud commit also needs lookup. `share --inspect
 --json LOCAL_ID` uses daemon-owned bounded local metadata with no cloud request.
 Only a proven terminal failure permits deliberate `share --new-attempt LOCAL_ID`.
 Older servers, wrong account/origin and conflicting receipts fail closed.
+
+
+For explicitly requested offline retention, list first, then use `plansplease pin
+ID --generation GENERATION --json` on that existing immutable generation. Never
+auto-pin on publish/share. Pins survive automatic cleanup but count toward the
+finite 1 GiB logical quota; full pinned storage refuses new publication/import.
+`usage --json` includes pinnedCount and pinnedBytes. Inventory and share local
+outcomes have pinned, expiresAt=null while pinned, and unpinnedExpiresAt.
+
+Before `plansplease unpin ID --generation GENERATION --json`, explain that the
+original access-based expiry returns without renewal. If it has passed, cleanup
+can remove the copy promptly. Pins are not backups or permanent availability.
+Manual selected delete can delete pins; cloud copies/receipts remain independent.
+After lost/unconfirmed pin responses inspect list for the same generation.
+Neither command silently selects a replacement or resurrects a missing copy.

@@ -180,6 +180,7 @@ const documentFromRow = (row: Record<string, unknown>) => ({
 const documentSnapshotFromRow = (row: Record<string, unknown>) => ({
   ...documentFromRow(row),
   generation: validateGeneration(rowValue(row, "generation")),
+  pinned: rowValue(row, "pinned") === 1,
 });
 
 const createStore = (database: DatabaseSync): MetadataStore => {
@@ -237,7 +238,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
           currentBytes: current.bytes,
           requestedBytes,
           quotaBytes: V1_STORAGE_QUOTA_BYTES,
-          message: `plansplease storage quota exceeded: this publication needs ${formatBytes(requestedBytes)} but only ${formatBytes(Math.max(0, V1_STORAGE_QUOTA_BYTES - current.bytes))} remains of the fixed ${formatBytes(V1_STORAGE_QUOTA_BYTES)} limit. Run plansplease clean to remove expired snapshots, then try again.`,
+          message: `plansplease storage quota exceeded: this publication needs ${formatBytes(requestedBytes)} but only ${formatBytes(Math.max(0, V1_STORAGE_QUOTA_BYTES - current.bytes))} remains of the fixed ${formatBytes(V1_STORAGE_QUOTA_BYTES)} limit. Run plansplease clean to remove expired unpinned snapshots. Pins count toward quota and are never evicted; list/usage can help you deliberately unpin or delete selected snapshots.`,
         });
       }
 
@@ -316,10 +317,10 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     const watermarkClause = normalizedWatermark === undefined ? "" : " AND d.rowid <= :watermark";
     const rows = database
       .prepare(
-        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation
+        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation, EXISTS (SELECT 1 FROM snapshot_pins p WHERE p.id = d.id AND p.generation = g.generation) AS pinned
          FROM documents AS d
          JOIN ${GENERATION_TABLE_NAME} AS g ON g.id = d.id
-         WHERE d.lastAccessedAt < :cutoff${watermarkClause}${cursorClause}
+         WHERE NOT EXISTS (SELECT 1 FROM snapshot_pins p WHERE p.id = d.id AND p.generation = g.generation) AND d.lastAccessedAt < :cutoff${watermarkClause}${cursorClause}
          ORDER BY d.lastAccessedAt ASC, d.id COLLATE BINARY ASC
          LIMIT :limit`
       )
@@ -346,7 +347,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     ensureOpen();
     const row = database
       .prepare(
-        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation
+        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation, EXISTS (SELECT 1 FROM snapshot_pins p WHERE p.id = d.id AND p.generation = g.generation) AS pinned
        FROM documents AS d JOIN ${GENERATION_TABLE_NAME} AS g ON g.id = d.id
        WHERE d.id = :id`
       )
@@ -367,7 +368,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
         : `${watermarkClause === "" ? "WHERE" : " AND"} d.id COLLATE BINARY > :afterId`;
     const rows = database
       .prepare(
-        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation
+        `SELECT d.id, d.createdAt, d.lastAccessedAt, d.size, g.generation, EXISTS (SELECT 1 FROM snapshot_pins p WHERE p.id = d.id AND p.generation = g.generation) AS pinned
          FROM documents AS d
          JOIN ${GENERATION_TABLE_NAME} AS g ON g.id = d.id
          ${watermarkClause}${cursorClause}
@@ -442,7 +443,48 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     return storageUsageFor(aggregate.size, aggregate.count);
   };
 
+  const setDocumentPinned: MetadataStore["setDocumentPinned"] = (selection, pinned) => {
+    ensureOpen();
+    const id = validateId(selection.id);
+    const generation = validateGeneration(selection.generation);
+    if (typeof pinned !== "boolean") throw new TypeError("Expected a pin state.");
+    return inTransaction(database, () => {
+      const current = getDocumentMetadataSnapshot(id);
+      if (!current) return "not_found";
+      if (current.generation !== generation) return "stale";
+      if (pinned)
+        database
+          .prepare(
+            "INSERT INTO snapshot_pins (id, generation) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET generation = excluded.generation"
+          )
+          .run(id, generation);
+      else
+        database
+          .prepare("DELETE FROM snapshot_pins WHERE id = ? AND generation = ?")
+          .run(id, generation);
+      return "updated";
+    });
+  };
+  const getPinnedStorageUsage = () => {
+    ensureOpen();
+    const row = database
+      .prepare(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(d.size), 0) AS size FROM documents d JOIN document_generations g ON g.id = d.id JOIN snapshot_pins p ON p.id = d.id AND p.generation = g.generation`
+      )
+      .get()!;
+    const usage = storageUsageFor(
+      readInteger(row["size"], "size"),
+      readInteger(row["count"], "count")
+    );
+    return { pinnedBytes: usage.bytes, pinnedCount: usage.documentCount };
+  };
+
   const deleteGenerationAfterDocumentDelete = (id: string, generation?: string) => {
+    database
+      .prepare(
+        "DELETE FROM snapshot_pins WHERE id = ? AND NOT EXISTS (SELECT 1 FROM documents WHERE id = ?)"
+      )
+      .run(id, id);
     const generationClause = generation === undefined ? "" : " AND generation = :generation";
     database
       .prepare(
@@ -497,6 +539,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
         .prepare(
           `DELETE FROM documents
            WHERE id = :id
+             AND NOT EXISTS (SELECT 1 FROM snapshot_pins p JOIN document_generations g ON g.id = p.id AND g.generation = p.generation WHERE p.id = documents.id)
              AND lastAccessedAt < :cutoff
              AND EXISTS (
                SELECT 1 FROM ${GENERATION_TABLE_NAME} AS g
@@ -516,7 +559,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     });
   };
 
-  const deleteDocumentIfMatches = (metadata: DocumentMetadataMatch) => {
+  const deleteDocumentIfMatches = (metadata: DocumentMetadataMatch, automatic = false) => {
     ensureOpen();
     const normalized = {
       ...validateMetadata(metadata),
@@ -527,6 +570,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
         .prepare(
           `DELETE FROM documents
            WHERE id = :id
+             ${automatic ? "AND NOT EXISTS (SELECT 1 FROM snapshot_pins p JOIN document_generations g ON g.id = p.id AND g.generation = p.generation WHERE p.id = documents.id)" : ""}
              AND createdAt = :createdAt
              AND lastAccessedAt = :lastAccessedAt
              AND size = :size
@@ -654,6 +698,8 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     recordDocumentAccess,
     getDocumentAggregate,
     getDocumentStorageUsage,
+    setDocumentPinned,
+    getPinnedStorageUsage,
     deleteDocument,
     deleteDocumentIfLastAccessedBefore,
     deleteDocumentIfMatches,

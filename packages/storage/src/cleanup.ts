@@ -262,7 +262,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
           candidateCursor = accessCursorFor(row);
           protectedFileIds.add(row.id);
           takeItem();
-          if (row.lastAccessedAt >= cutoff) {
+          if (row.pinned || row.lastAccessedAt >= cutoff) {
             continue;
           }
 
@@ -276,7 +276,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
               row.id,
               (targetExists) => {
                 if (!targetExists) {
-                  removedMetadataRow = metadataStore.deleteDocumentIfMatches(row);
+                  removedMetadataRow = metadataStore.deleteDocumentIfMatches(row, true);
                   return false;
                 }
                 // The target was absent during the observation. A newly
@@ -357,6 +357,10 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
           protectedFileIds.add(row.id);
           takeItem();
           try {
+            if (row.pinned) {
+              retainedEntries += 1;
+              continue;
+            }
             const file = await documentFileStore.getDocumentFileObservation(row.id);
             if (file === undefined) {
               let removed = false;
@@ -364,7 +368,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
                 if (targetExists) {
                   return false;
                 }
-                removed = metadataStore.deleteDocumentIfMatches(row);
+                removed = metadataStore.deleteDocumentIfMatches(row, true);
                 return false;
               });
               if (removed) {
@@ -383,7 +387,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
                 if (!targetExists) {
                   return false;
                 }
-                removed = metadataStore.deleteDocumentIfMatches(row);
+                removed = metadataStore.deleteDocumentIfMatches(row, true);
                 return removed;
               },
               file.identity

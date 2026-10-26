@@ -52,7 +52,11 @@ complete encoded object, including its manifest, counts against the same quota.
 
 ## Local retention and deletion
 
-The local daemon keeps snapshots for 30 days since last successful access.
+Unpinned local snapshots expire 30 days after last successful access. Explicit
+generation-bound pins prevent automatic expiry and space cleanup within the
+finite 1 GiB logical quota. Pin/unpin never renew access. Unpin restores the
+original access-clock expiry and an expired copy may be cleaned promptly. Pins
+are not backups; manual selected deletion remains allowed.
 Cleanup runs at startup and every 24 hours, or when `plansplease clean` runs.
 Local state is private to the user profile and the daemon binds to loopback.
 

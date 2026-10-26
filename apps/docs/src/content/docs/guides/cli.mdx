@@ -171,6 +171,8 @@ Codex installation.
 plansplease list --limit 50 --json
 plansplease list --after <nextAfter> --limit 50 --json
 plansplease usage --json
+plansplease pin <id> --generation <generation-from-list> --json
+plansplease unpin <id> --generation <generation-from-list> --json
 plansplease delete <id> --generation <generation-from-list> --json
 ```
 
@@ -180,7 +182,8 @@ to load its new operations. Inventory reads at most 100 metadata rows per page, 
 `nextAfter` is omitted on the final page. Pages reflect current metadata, so a
 concurrent publication before the cursor appears on a fresh traversal. Listing
 and usage never extend retention. Each row includes `createdAt`, `lastAccessedAt`,
-`size`, immutable `generation`, and `expiresAt` as epoch milliseconds. Expiry is
+`size`, immutable `generation`, `pinned`, `unpinnedExpiresAt` as epoch milliseconds,
+and `expiresAt` as epoch milliseconds or null while pinned. Unpinned expiry is
 30 days after last access; cleanup removes rows strictly older than that boundary.
 A successful document read can move expiry later.
 
@@ -204,3 +207,34 @@ generation is still retained; then retry the selection. `recovery: "inspect"`
 means the metadata state could not be established; list again before choosing
 any retry. No automatic retry or cloud deletion occurs. If a response is lost, list again and use cleanup
 for residual storage; never substitute a different generation in a blind retry.
+
+
+### Keep a selected copy offline
+
+Use `pin ID --generation GENERATION --json` with an existing generation from `list`,
+or choose **Pin for offline** in the manager. Pinning prevents automatic expiry
+and space cleanup. Publishing, importing and sharing never pin automatically.
+Pinned snapshots still consume the finite 1 GiB logical quota, including the
+4 KiB metadata charge. `usage` reports `pinnedBytes` and `pinnedCount` as a subset
+of total usage. If cleanup cannot reclaim enough room, publication and import
+fail rather than evict pins. Deliberately unpin or delete selected copies to
+make room. Unpinning alone does not reclaim unexpired data.
+
+Pin and unpin do not renew access timestamps. Inventory and share local outcomes
+report `pinned`, `expiresAt: null` while pinned, and `unpinnedExpiresAt`, the
+original access-clock expiry. Unpin restores that expiry. An already-expired
+copy may be cleaned promptly, including during the next daemon start. The
+manager shows this consequence before confirmation. Preview access can still
+advance the access clock, including while pinned.
+
+A pin is not a backup or a promise of permanent availability. Disk loss, manual
+selected deletion and stopping the daemon still affect availability. Local and
+cloud deletion remain independent. Pin operations return `updated`, `stale`,
+`not_found` or `unavailable`; only `updated` exits zero. After an unconfirmed
+response, refresh `list` before retrying the same generation. Never substitute a
+replacement generation without selecting it deliberately.
+
+The additive metadata v4 migration preserves generations, access clocks and share
+attempts/receipts. Older writers refuse v4 on open. Stop older daemons before
+upgrading; updated clients reject older inventory responses that lack explicit
+pin/retention fields rather than misreporting pinned expiry.

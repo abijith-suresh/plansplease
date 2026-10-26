@@ -77,7 +77,9 @@ export type ShareResult = {
     generation?: string;
     contentSha256?: string;
     size?: number;
-    expiresAt?: number;
+    pinned?: boolean;
+    unpinnedExpiresAt?: number;
+    expiresAt?: number | null;
     retentionDays: 30;
     quotaBytes: number;
   };
@@ -157,13 +159,20 @@ export async function shareSnapshot(
   }
   const { attempt } = prepared;
   const sameGeneration = inspection.local?.generation === attempt.generation;
-  const { url: observedUrl, expiresAt: observedExpiry, ...localObservation } = local;
+  const {
+    url: observedUrl,
+    expiresAt: observedExpiry,
+    pinned: observedPin,
+    unpinnedExpiresAt: observedUnpinnedExpiry,
+    ...localObservation
+  } = local;
   const result: ShareResult = {
     local: {
       ...localObservation,
       status: sameGeneration ? "available" : "missing",
       ...(sameGeneration && observedUrl ? { url: observedUrl } : {}),
       ...(sameGeneration && observedExpiry !== undefined ? { expiresAt: observedExpiry } : {}),
+      ...(sameGeneration ? { pinned: observedPin, unpinnedExpiresAt: observedUnpinnedExpiry } : {}),
       generation: attempt.generation,
       size: attempt.size,
       contentSha256: attempt.contentSha256,

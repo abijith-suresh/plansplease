@@ -8,6 +8,7 @@ import {
   listDaemonSnapshots,
   getDaemonStorageUsage,
   deleteDaemonSnapshot,
+  setDaemonSnapshotPinned,
   cleanDaemon,
   type DaemonConfig,
   type DaemonError,
@@ -30,6 +31,7 @@ import type {
   SnapshotInventory,
   SnapshotUsage,
   SnapshotDeleteResult,
+  SnapshotPinResult,
   DocumentCleanupResult,
 } from "@planview/storage";
 import { Data, Effect } from "effect";
@@ -48,7 +50,9 @@ export type LocalOperation =
   | "ui"
   | "list"
   | "usage"
-  | "delete";
+  | "delete"
+  | "pin"
+  | "unpin";
 
 export class LocalApplicationError extends Data.TaggedError("LocalApplicationError")<{
   readonly operation: LocalOperation;
@@ -107,6 +111,10 @@ export type LocalApplication = Readonly<{
     options?: SnapshotListOptions
   ) => Effect.Effect<SnapshotInventory, LocalApplicationFailure>;
   readonly usage: () => Effect.Effect<SnapshotUsage, LocalApplicationFailure>;
+  readonly setPinned: (
+    selection: SnapshotSelection,
+    pinned: boolean
+  ) => Effect.Effect<SnapshotPinResult, LocalApplicationFailure>;
   readonly deleteSnapshot: (
     selection: SnapshotSelection
   ) => Effect.Effect<SnapshotDeleteResult, LocalApplicationFailure>;
@@ -306,6 +314,10 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
     list,
     usage,
     deleteSnapshot,
+    setPinned: (selection, pinned) =>
+      withConfig(pinned ? "pin" : "unpin", resolveConfig, (config) =>
+        setDaemonSnapshotPinned(config, daemonOptions, selection, pinned)
+      ),
   };
 };
 
@@ -331,4 +343,5 @@ export type {
   SnapshotInventory,
   SnapshotUsage,
   SnapshotDeleteResult,
+  SnapshotPinResult,
 } from "@planview/storage";

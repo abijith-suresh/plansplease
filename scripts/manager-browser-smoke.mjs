@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { npmPackFilename } from "./npm-pack-result.mjs";
 
@@ -70,6 +71,37 @@ try {
     JSON.parse(
       command(process.execPath, [installed, ...args, "--json"], { cwd: fixture, env: environment })
     );
+  // Seed only while no daemon exists, then close the fixture owner. This lets the
+  // real UI show original expired eligibility without a test clock/runtime API.
+  const expiredId = "expired" + "0".repeat(14);
+  const data = join(fixture, "data");
+  mkdirSync(data, { recursive: true, mode: 0o700 });
+  const { openStorage, openDocumentFileStore, createDocumentPublicationCoordinator } = await import(
+    pathToFileURL(join(root, "packages/storage/dist/index.js")).href
+  );
+  const metadata = Effect.runSync(openStorage(join(data, "metadata.sqlite")));
+  const files = Effect.runSync(
+    openDocumentFileStore({
+      documentsDir: join(data, "documents"),
+      stagingDir: join(data, "staging"),
+    })
+  );
+  try {
+    const oldSource = join(fixture, "expired.html");
+    writeFileSync(oldSource, "<h1>Offline copy</h1>");
+    await Effect.runPromise(
+      createDocumentPublicationCoordinator({
+        metadataStore: metadata,
+        documentFileStore: files,
+        now: () => 1,
+        generateId: () => expiredId,
+      }).publish(oldSource)
+    );
+    metadata.setDocumentPinned(metadata.getDocumentMetadataSnapshot(expiredId), true);
+  } finally {
+    await files.close();
+    metadata.close();
+  }
   const launch = execute("ui");
   const running = execute("status");
   assert.equal(running.state, "running");
@@ -119,6 +151,59 @@ try {
     body: "{}",
   });
   assert.equal(browserWithNativeSecret.status, 401);
+  await page.getByRole("button", { name: `Unpin ${expiredId}`, exact: true }).waitFor();
+  const artifactsBeforeUnpin = process.env.PLANVIEW_BROWSER_ARTIFACT_DIR;
+  if (artifactsBeforeUnpin) {
+    mkdirSync(artifactsBeforeUnpin, { recursive: true });
+    await page.screenshot({
+      path: join(artifactsBeforeUnpin, "manager-pinned.png"),
+      fullPage: true,
+    });
+  }
+  page.once("dialog", (dialog) => {
+    assert.match(dialog.message(), /already expired and may be cleaned promptly/);
+    void dialog.dismiss();
+  });
+  await page.getByRole("button", { name: `Unpin ${expiredId}`, exact: true }).click();
+  assert.equal(execute("list").snapshots.find((row) => row.id === expiredId).pinned, true);
+  page.once("dialog", (dialog) => {
+    assert.match(dialog.message(), /already expired and may be cleaned promptly/);
+    void dialog.accept();
+  });
+  await page.getByRole("button", { name: `Unpin ${expiredId}`, exact: true }).click();
+  await page.getByRole("button", { name: `Pin ${expiredId}`, exact: true }).waitFor();
+  assert.equal(
+    execute("list").snapshots.find((row) => row.id === expiredId).expiresAt,
+    1 + 30 * 86400000
+  );
+  execute("clean");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page
+    .getByRole("button", { name: `Pin ${expiredId}`, exact: true })
+    .waitFor({ state: "hidden" });
+  const beforePin = execute("list").snapshots.find((row) => row.id === published.id);
+  await page.getByRole("button", { name: `Pin ${published.id}`, exact: true }).click();
+  await page.getByText("Pinned · no automatic expiry", { exact: true }).waitFor();
+  const pinned = execute("list").snapshots.find((row) => row.id === published.id);
+  assert.equal(pinned.pinned, true);
+  assert.equal(pinned.expiresAt, null);
+  assert.equal(pinned.lastAccessedAt, beforePin.lastAccessedAt);
+  page.once("dialog", (dialog) => {
+    assert.match(dialog.message(), /Original access-based expiry/);
+    void dialog.dismiss();
+  });
+  await page.getByRole("button", { name: `Unpin ${published.id}`, exact: true }).click();
+  assert.equal(execute("list").snapshots.find((row) => row.id === published.id).pinned, true);
+  page.once("dialog", (dialog) => {
+    assert.match(dialog.message(), /does not renew retention/);
+    void dialog.accept();
+  });
+  await page.getByRole("button", { name: `Unpin ${published.id}`, exact: true }).click();
+  await page.getByRole("button", { name: `Pin ${published.id}`, exact: true }).waitFor();
+  const unpinned = execute("list").snapshots.find((row) => row.id === published.id);
+  assert.equal(unpinned.pinned, false);
+  assert.equal(unpinned.expiresAt, beforePin.expiresAt);
+  assert.equal(unpinned.lastAccessedAt, beforePin.lastAccessedAt);
   await page.getByRole("button", { name: `Copy link ${published.id}`, exact: true }).click();
   assert.equal(
     await page.evaluate(() => navigator.clipboard.readText()),

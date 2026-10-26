@@ -738,3 +738,8 @@ dialog > p {
     font-size: 10px;
   }
 }
+
+.pin-label {
+  color: var(--moss, #355344);
+  font-weight: 600;
+}

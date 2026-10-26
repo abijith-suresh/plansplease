@@ -61,6 +61,15 @@ export const createDaemonApplication = ({
         (activeSignal) => Effect.runPromise(snapshots.deleteSnapshot(selection, activeSignal)),
         signal
       ),
+    setPinned: (
+      selection: Parameters<typeof snapshots.setPinned>[0],
+      pinned: boolean,
+      signal?: AbortSignal
+    ) =>
+      operationGate(
+        (activeSignal) => Effect.runPromise(snapshots.setPinned(selection, pinned, activeSignal)),
+        signal
+      ),
     publishSource,
     importHtml,
   };

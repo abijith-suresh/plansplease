@@ -4,10 +4,20 @@ import {
   inventoryFromPayload,
   usageFromPayload,
   deletionFromPayload,
+  pinFromPayload,
+  retentionFromPayload,
 } from "../dist/snapshot-response.js";
 
 const selection = { id: "a".repeat(21), generation: "12345678-1234-1234-1234-123456789012" };
-const row = { ...selection, createdAt: 1, lastAccessedAt: 2, expiresAt: 3, size: 4 };
+const row = {
+  ...selection,
+  createdAt: 1,
+  lastAccessedAt: 2,
+  expiresAt: 3,
+  unpinnedExpiresAt: 3,
+  pinned: false,
+  size: 4,
+};
 test("daemon snapshot clients validate bounded responses before exposing them", () => {
   assert.deepEqual(inventoryFromPayload({ snapshots: [row] }), { snapshots: [row] });
   for (const payload of [
@@ -40,4 +50,24 @@ test("daemon snapshot clients validate bounded responses before exposing them", 
     { ...deleted, message: { secret: "not rendered" } },
   ])
     assert.throws(() => deletionFromPayload(payload));
+});
+
+test("effective retention is explicit and incompatible old or contradictory payloads fail closed", () => {
+  const pinned = { pinned: true, expiresAt: null, unpinnedExpiresAt: 3 };
+  assert.deepEqual(retentionFromPayload(pinned), pinned);
+  for (const retention of [
+    { expiresAt: 3 },
+    { ...pinned, expiresAt: 3 },
+    { ...pinned, pinned: false },
+    { ...pinned, unpinnedExpiresAt: -1 },
+  ])
+    assert.throws(() => retentionFromPayload(retention));
+  assert.deepEqual(pinFromPayload({ ...selection, status: "updated", retention: pinned }), {
+    ...selection,
+    status: "updated",
+    retention: pinned,
+  });
+  assert.throws(() => pinFromPayload({ ...selection, status: "updated" }));
+  for (const status of [["updated"], ["stale"], null, 1, {}])
+    assert.throws(() => pinFromPayload({ ...selection, status }));
 });

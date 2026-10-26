@@ -1,3 +1,4 @@
+import { retentionFromPayload } from "./snapshot-response.js";
 import { validateDocumentId } from "@planview/core";
 import {
   parseShareAttempt,
@@ -59,13 +60,7 @@ export function parseShareInspection(value: unknown): ShareInspection {
   if (attempts.some((attempt) => attempt.id !== id))
     throw new Error("Share inspection identity mismatch.");
   const local = row["local"] === undefined ? undefined : record(row["local"]);
-  if (
-    local &&
-    (!Number.isSafeInteger(local["size"]) ||
-      Number(local["size"]) < 0 ||
-      !Number.isSafeInteger(local["expiresAt"]) ||
-      Number(local["expiresAt"]) < 0)
-  )
+  if (local && (!Number.isSafeInteger(local["size"]) || Number(local["size"]) < 0))
     throw new Error("Invalid local snapshot metadata.");
   return {
     id,
@@ -76,7 +71,7 @@ export function parseShareInspection(value: unknown): ShareInspection {
           local: {
             ...validateSnapshotSelection({ id, generation: String(local["generation"]) }),
             size: Number(local["size"]),
-            expiresAt: Number(local["expiresAt"]),
+            ...retentionFromPayload(local),
             url: localUrl(local["url"], id),
           },
         }

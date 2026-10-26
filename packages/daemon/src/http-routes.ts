@@ -32,6 +32,8 @@ export const DAEMON_SHUTDOWN_PATH = "/__planview/shutdown";
 export const DAEMON_PUBLISH_PATH = "/__planview/publish";
 export const DAEMON_INVENTORY_PATH = "/__planview/snapshots";
 export const DAEMON_USAGE_PATH = "/__planview/usage";
+export const DAEMON_PIN_PATH = "/__planview/pin";
+export const DAEMON_UNPIN_PATH = "/__planview/unpin";
 export const DAEMON_DELETE_PATH = "/__planview/delete";
 export const DAEMON_SHARE_PATH = "/__planview/share";
 export const DAEMON_MANAGER_PATH = "/__planview/manager";
@@ -174,6 +176,8 @@ const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_INVENTORY_PATH,
   DAEMON_USAGE_PATH,
   DAEMON_DELETE_PATH,
+  DAEMON_PIN_PATH,
+  DAEMON_UNPIN_PATH,
   DAEMON_MANAGER_PATH,
   DAEMON_SHARE_PATH,
   "/internal/clean",
@@ -665,7 +669,10 @@ const handleRequest = async (
     response(res, 200, JSON.stringify(await application.usage()));
     return;
   }
-  if (url === DAEMON_DELETE_PATH && request.method === "POST") {
+  if (
+    [DAEMON_DELETE_PATH, DAEMON_PIN_PATH, DAEMON_UNPIN_PATH].includes(url ?? "") &&
+    request.method === "POST"
+  ) {
     let selection: ReturnType<typeof validateSnapshotSelection>;
     try {
       const payload = await readJsonBody(request, requestSignal);
@@ -686,7 +693,10 @@ const handleRequest = async (
         response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
       return;
     }
-    const result = await application.deleteSnapshot(selection, requestSignal);
+    const result =
+      url === DAEMON_DELETE_PATH
+        ? await application.deleteSnapshot(selection, requestSignal)
+        : await application.setPinned(selection, url === DAEMON_PIN_PATH, requestSignal);
     response(res, 200, JSON.stringify(result));
     return;
   }
