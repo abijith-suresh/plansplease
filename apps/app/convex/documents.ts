@@ -1,5 +1,18 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { makeFunctionReference, paginationOptsValidator } from "convex/server";
+
+import {
+  assertReceiptMatches,
+  findReceipt,
+  operationValidator,
+  publicReceipt,
+  receiptLookupArgs,
+  validateOperation,
+  validateReceiptLookup,
+} from "./uploadReceipt.ts";
+import type { UploadReceipt } from "./uploadReceipt.ts";
+import type { UploadOperation } from "./documentProof.ts";
+import type { UploadReservation } from "./uploadReceipt.ts";
 
 import type { Id } from "./_generated/dataModel.js";
 import {
@@ -8,6 +21,7 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server.js";
 import {
   verifyCreateDocumentProof,
@@ -39,8 +53,10 @@ const createArgs = {
   contentType: v.string(),
   sizeBytes: v.number(),
   proof: proofValidator,
+  operation: v.optional(operationValidator),
 };
 type CreateArgs = {
+  operation?: UploadOperation;
   title: string;
   storageProvider: string;
   storageKey: string;
@@ -121,6 +137,7 @@ export const listPage = query({
 });
 
 export const verifyUploadInput = async (ownerId: string, args: CreateArgs) => {
+  if (args.operation) validateOperation(args.operation);
   const validLocator =
     args.storageProvider === "uploadthing"
       ? args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) &&
@@ -149,6 +166,7 @@ export const verifyUploadInput = async (ownerId: string, args: CreateArgs) => {
       storageKey: args.storageKey,
       contentType: args.contentType,
       sizeBytes: args.sizeBytes,
+      ...(args.operation ? { operation: args.operation } : {}),
     },
     args.proof
   );
@@ -174,8 +192,20 @@ export const reserveUploadForOwner = async (
   ctx: MutationCtx,
   ownerId: string,
   args: CreateArgs
-) => {
+): Promise<UploadReservation> => {
   await verifyUploadInput(ownerId, args);
+  if (args.operation) {
+    const receipt = await findReceipt(ctx, ownerId, args.operation);
+    if (receipt) {
+      assertReceiptMatches(receipt, args.operation);
+      return {
+        id: receipt.documentId ?? null,
+        uploadDeadlineAt: 0,
+        receipt: publicReceipt(receipt),
+        admitted: false,
+      };
+    }
+  }
   const document = await findStoredDocument(ctx, ownerId, args.storageKey);
   if (document) {
     if (document.deletionRequestedAt !== undefined) throw new Error("Document is being deleted");
@@ -183,6 +213,7 @@ export const reserveUploadForOwner = async (
   }
   const reservation = await findUploadReservation(ctx, ownerId, args.storageKey);
   if (reservation) {
+    if (reservation.receiptId) throw new Error("Upload receipt is required");
     if (
       !reservationMatches(reservation, args) ||
       reservation.cleanupRequested ||
@@ -192,10 +223,48 @@ export const reserveUploadForOwner = async (
     }
     return { id: null, uploadDeadlineAt: reservation.uploadDeadlineAt };
   }
-  await reserveAccountBytes(ctx, ownerId, args.sizeBytes);
+  try {
+    await reserveAccountBytes(ctx, ownerId, args.sizeBytes);
+  } catch (error) {
+    if (
+      !args.operation ||
+      !(error instanceof ConvexError) ||
+      typeof error.data !== "object" ||
+      error.data === null ||
+      Array.isArray(error.data) ||
+      error.data.code !== "STORAGE_QUOTA_EXCEEDED"
+    )
+      throw error;
+    const id = await ctx.db.insert("uploadReceipts", {
+      ownerId,
+      ...args.operation,
+      storageKey: args.storageKey,
+      status: "failed",
+      failureCode: "STORAGE_QUOTA_EXCEEDED",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return {
+      id: null,
+      uploadDeadlineAt: 0,
+      receipt: publicReceipt((await ctx.db.get(id))!),
+      admitted: false,
+    };
+  }
+  const receiptId = args.operation
+    ? await ctx.db.insert("uploadReceipts", {
+        ownerId,
+        ...args.operation,
+        storageKey: args.storageKey,
+        status: "pending",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    : undefined;
   const uploadDeadlineAt = Date.now() + uploadLifetimeMs;
   const nextAttemptAt = uploadDeadlineAt + uploadCleanupGraceMs;
   const reservationId = await ctx.db.insert("uploadReservations", {
+    ...(receiptId ? { receiptId } : {}),
     ownerId,
     title: args.title.trim(),
     storageKey: args.storageKey,
@@ -210,7 +279,31 @@ export const reserveUploadForOwner = async (
   await ctx.scheduler.runAfter(uploadLifetimeMs + uploadCleanupGraceMs, uploadCleanupWorker, {
     reservationId,
   });
-  return { id: null, uploadDeadlineAt };
+  return {
+    id: null,
+    uploadDeadlineAt,
+    ...(receiptId
+      ? {
+          receipt: publicReceipt((await ctx.db.get(receiptId))!),
+          admitted: true,
+        }
+      : {}),
+  };
+};
+
+const receiptForMutation = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
+  if (!args.operation) return null;
+  const receipt = await findReceipt(ctx, ownerId, args.operation);
+  if (!receipt) throw new Error("Upload receipt is missing");
+  assertReceiptMatches(receipt, args.operation);
+  if (receipt.storageKey !== args.storageKey) throw new Error("Upload receipt locator mismatch");
+  return receipt;
+};
+const assertReservationReceipt = (
+  reservation: { receiptId?: Id<"uploadReceipts"> },
+  receipt: { _id: Id<"uploadReceipts"> } | null
+) => {
+  if (reservation.receiptId !== receipt?._id) throw new Error("Upload receipt is required");
 };
 
 export const abandonUploadForOwner = async (
@@ -227,23 +320,32 @@ export const abandonUploadForOwner = async (
     ))
   )
     throw new Error("Invalid upload outcome proof");
+  const receipt = await receiptForMutation(ctx, ownerId, args);
+  if (receipt?.status === "committed") return receipt.documentId!;
   // A commit can succeed before its response is lost. Check and fence the
   // reservation transactionally before asking the worker to delete anything.
   const document = await findStoredDocument(ctx, ownerId, args.storageKey);
   if (document) return document.deletionRequestedAt === undefined ? document._id : null;
   const reservation = await findUploadReservation(ctx, ownerId, args.storageKey);
   if (reservation) {
+    assertReservationReceipt(reservation, receipt);
     if (!reservationMatches(reservation, args)) throw new Error("Invalid upload reservation");
     await ctx.db.patch(reservation._id, {
       cleanupRequested: true,
       uploadConfirmed: args.uploadConfirmed || reservation.uploadConfirmed,
     });
   }
+  // The receipt records document failure, not proof that provider bytes are gone.
+  // Fencing and this terminal outcome commit together. Unknown ingest remains charged.
+  if (receipt) await ctx.db.patch(receipt._id, { status: "failed", updatedAt: Date.now() });
   return null;
 };
 
 export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
   await verifyUploadInput(ownerId, args);
+  const receipt = await receiptForMutation(ctx, ownerId, args);
+  if (receipt?.status === "committed") return receipt.documentId!;
+  if (receipt?.status === "failed") throw new Error("Upload operation has failed");
   const existing = await ctx.db
     .query("documents")
     .withIndex("by_owner_storageKey", (q) =>
@@ -266,6 +368,7 @@ export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: Cr
   ) {
     throw new Error("Upload reservation is no longer available");
   }
+  assertReservationReceipt(reservation, receipt);
   const now = Date.now();
   const id = await ctx.db.insert("documents", {
     ownerId,
@@ -277,11 +380,13 @@ export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: Cr
     createdAt: now,
     updatedAt: now,
   });
+  if (receipt)
+    await ctx.db.patch(receipt._id, { status: "committed", documentId: id, updatedAt: now });
   await ctx.db.delete(reservation._id);
   return id;
 };
 
-const requireCliOwnerId = async (ctx: MutationCtx, tokenHash: string) => {
+const requireCliOwnerId = async (ctx: MutationCtx | QueryCtx, tokenHash: string) => {
   if (!/^[a-f0-9]{64}$/.test(tokenHash)) throw new Error("Invalid CLI credential");
   const credential = await ctx.db
     .query("cliCredentials")
@@ -318,6 +423,25 @@ export const createWithCliCredential = mutation({
   args: { ...createArgs, tokenHash: v.string() },
   handler: async (ctx, args) =>
     createForOwner(ctx, await requireCliOwnerId(ctx, args.tokenHash), args),
+});
+
+export const getUploadReceiptForOwner = async (
+  ctx: MutationCtx | QueryCtx,
+  ownerId: string,
+  input: { key: string; origin: string }
+): Promise<UploadReceipt | null> => {
+  validateReceiptLookup(input);
+  const receipt = await findReceipt(ctx, ownerId, input);
+  return receipt ? publicReceipt(receipt) : null;
+};
+export const uploadReceipt = query({
+  args: receiptLookupArgs,
+  handler: async (ctx, args) => getUploadReceiptForOwner(ctx, await requireOwnerId(ctx), args),
+});
+export const uploadReceiptWithCliCredential = query({
+  args: { ...receiptLookupArgs, tokenHash: v.string() },
+  handler: async (ctx, args) =>
+    getUploadReceiptForOwner(ctx, await requireCliOwnerId(ctx, args.tokenHash), args),
 });
 
 export const requestDeletionForOwner = async (
@@ -480,6 +604,12 @@ export const claimUploadCleanup = internalMutation({
       await ctx.db.delete(reservationId);
       return null;
     }
+    // Cleanup admission and terminal receipt failure share the commit fence.
+    if (reservation.receiptId)
+      await ctx.db.patch(reservation.receiptId, {
+        status: "failed",
+        updatedAt: Date.now(),
+      });
     if (!reservation.uploadConfirmed) {
       // A crashed process or interrupted HTTP request may still have an ingest
       // in progress. Keep its capacity charged for manual reconciliation.

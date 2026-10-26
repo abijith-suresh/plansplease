@@ -36,7 +36,7 @@ bundles private packages so installation does not require publishing them.
 Better Auth runs through the Convex component. The app proxies auth endpoints
 and obtains a Convex token for session-authenticated requests. Convex owns
 account/document metadata, owner checks, OAuth state, upload credentials,
-quota reservations, and cleanup jobs. UploadThing owns the file bytes.
+quota reservations, durable upload operation receipts, and cleanup jobs. UploadThing owns the file bytes.
 
 Convex has separate API and HTTP action origins. `CONVEX_URL` selects the API
 backend; `CONVEX_SITE_URL` selects HTTP/auth actions. Local CLI-generated aliases
@@ -59,6 +59,12 @@ the authorized account.
 Uncertain provider outcomes stay charged until reconciled. Storage metadata uses
 a provider name and logical locator; an owner-bound UploadThing custom ID supports
 cleanup even when a provider response is lost. Server proofs do not go to browsers.
+
+Optional [keyed upload operations](../upload-operations/) bind the authenticated
+account and configured app origin to exact server-hashed bytes and metadata.
+Receipt admission, document commit and failure fencing use the existing backend
+transactions; repeated requests return a durable outcome without replaying bytes.
+Legacy uploads remain unkeyed. Explicit local-first CLI sharing is pending.
 
 The provider adapter owns uploads, read URLs, and deletion. Standalone HTML
 previews download from storage in the browser after the app checks ownership.

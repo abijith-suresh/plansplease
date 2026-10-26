@@ -23,6 +23,9 @@ locally with `npm run local`:
 - Account sign-in, standalone HTML uploads, account-owned previews, and OAuth MCP.
 - CLI folder uploads and MCP bundle tools, including relative asset previews.
 - Cloud account quotas and provider-backed storage with deferred cleanup.
+- Optional [account/origin-scoped upload operation receipts](../upload-operations/)
+  with exact-byte fingerprints and server-side replay protection. CLI sharing
+  and automatic synchronization are not included.
 
 Hosted use of these features requires running compatible app and Convex releases.
 Bundle previews pass through the app with a bounded cache and consume app

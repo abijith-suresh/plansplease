@@ -158,6 +158,14 @@ The cloud app, hosted MCP, cloud uploads and cloud deletions remain separate.
 
 ## Cloud uploads
 
+`upload PATH` remains an explicit cloud-only operation. The server has an opt-in
+[operation receipt protocol](../docs/src/content/docs/reference/upload-operations.md)
+for future local-first sharing; the CLI does not silently enable it or retry
+uploads. No `share LOCAL_ID` command is available yet. Local and cloud documents
+and deletion remain independent. Local 10 MiB snapshots can exceed the cloud
+8 MiB limit; local 30-day/1 GiB policy does not promise permanent offline retention.
+
+
 Hosted services are currently offline; see the
 [features reference](../docs/src/content/docs/reference/planned-features.md).
 For testing, start the [local workspace](../docs/src/content/docs/reference/development.mdx#full-local-workspace),

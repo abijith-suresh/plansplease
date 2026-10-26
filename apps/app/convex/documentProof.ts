@@ -2,6 +2,25 @@ import { type SignedProof, signProof, verifyProof } from "./signedProof.ts";
 
 export type DocumentMutationProof = SignedProof;
 
+export type UploadOperation = Readonly<{
+  key: string;
+  origin: string;
+  fingerprint: string;
+  contentSha256: string;
+}>;
+
+// Optional extension preserves the exact legacy proof message when absent.
+const operationMessage = (operation: UploadOperation | undefined) =>
+  operation
+    ? [
+        "upload-operation-v1",
+        operation.key,
+        operation.origin,
+        operation.fingerprint,
+        operation.contentSha256,
+      ]
+    : [];
+
 export type CreateDocumentProofInput = Readonly<{
   ownerId: string;
   title: string;
@@ -9,6 +28,7 @@ export type CreateDocumentProofInput = Readonly<{
   storageKey: string;
   contentType: string;
   sizeBytes: number;
+  operation?: UploadOperation;
 }>;
 
 const createMessage = (input: CreateDocumentProofInput, expiresAt: number) =>
@@ -20,6 +40,7 @@ const createMessage = (input: CreateDocumentProofInput, expiresAt: number) =>
     input.storageKey,
     input.contentType,
     input.sizeBytes,
+    ...operationMessage(input.operation),
     expiresAt,
   ]);
 
@@ -44,6 +65,7 @@ const abandonMessage = (input: AbandonDocumentProofInput, expiresAt: number) =>
     input.contentType,
     input.sizeBytes,
     input.uploadConfirmed,
+    ...operationMessage(input.operation),
     expiresAt,
   ]);
 

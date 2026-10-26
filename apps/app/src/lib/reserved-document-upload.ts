@@ -7,7 +7,11 @@ import {
   type DocumentUploadCompensationReporter,
 } from "./document-upload-compensation.ts";
 
+import type { UploadOperation } from "../../convex/documentProof.ts";
+export type { UploadReservation } from "../../convex/uploadReceipt.ts";
+
 export type DocumentUploadMetadata = {
+  operation?: UploadOperation;
   title: string;
   storageProvider: StoredDocument["storageProvider"];
   storageKey: string;

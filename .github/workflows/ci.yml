@@ -180,6 +180,11 @@ jobs:
           test -f "$skills_project/.agents/skills/create-html/references/browser-native-patterns.md"
 
 
+      - name: Test installed legacy upload and keyed protocol against local fixtures
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: npm run test:upload:installed
+
       - name: Install Chromium for the installed manager browser smoke
         run: npx playwright install --with-deps chromium
 

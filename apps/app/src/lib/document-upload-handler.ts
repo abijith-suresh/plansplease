@@ -4,12 +4,16 @@ import {
   cloudDocumentTitleMaxLength,
   cloudDocumentTitleMinLength,
 } from "@planview/core/cloud-policy";
+import type { UploadOperation } from "../../convex/documentProof.ts";
+import { validateReceiptLookup, type UploadReceipt } from "../../convex/uploadReceipt.ts";
+import { fingerprintUpload, uploadWithReceipt } from "./upload-operation.ts";
 import { isConvexConfigurationError } from "./convex-configuration-error.ts";
 
 import {
   uploadReservedDocument,
   storageQuotaErrorResponse,
   type DocumentUploadMetadata,
+  type UploadReservation,
 } from "./reserved-document-upload.ts";
 import type { DocumentStorageUpload, StoredDocument } from "./document-storage.ts";
 import type { DocumentUploadCompensationReporter } from "./document-upload-compensation.ts";
@@ -21,13 +25,19 @@ export type DocumentUploadHandlerDependencies<Client> = {
   getCurrentUser(client: Client, request: Request): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
   getUploadLocator(objectId: string): StoredDocument;
+  getOperationOrigin?(): string;
+  getUploadReceipt?(
+    client: Client,
+    input: { key: string; origin: string },
+    request: Request
+  ): Promise<UploadReceipt | null>;
   uploadFile(input: DocumentStorageUpload): Promise<StoredDocument>;
   reserveMetadata(
     client: Client,
     input: DocumentUploadMetadata,
     ownerId: string,
     request: Request
-  ): Promise<{ id: string | null; uploadDeadlineAt: number }>;
+  ): Promise<UploadReservation>;
   abandonMetadata(
     client: Client,
     input: DocumentUploadMetadata,
@@ -166,14 +176,56 @@ export function createDocumentUploadHandler<Client>(
           return Response.json({ error: "Invalid HTML/CSS/JS bundle" }, { status: 400 });
         }
       }
+      const operationKey = request.headers.get("Idempotency-Key");
+      let operation: UploadOperation | undefined;
+      if (operationKey !== null) {
+        if (!dependencies.getOperationOrigin || !dependencies.getUploadReceipt) {
+          return Response.json({ error: "Upload operations are not configured" }, { status: 503 });
+        }
+        const origin = dependencies.getOperationOrigin();
+        try {
+          validateReceiptLookup({ key: operationKey, origin });
+          if (new URL(request.url).origin !== origin) throw new Error("Upload origin mismatch");
+        } catch {
+          return Response.json(
+            { error: "Invalid operation key or upload origin" },
+            { status: 400 }
+          );
+        }
+        operation = fingerprintUpload({
+          key: operationKey,
+          origin,
+          title,
+          contentType: bundle ? cloudBundleContentType : "text/html",
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        });
+      }
       const objectId = `${identity.subject}:${dependencies.createUploadId()}`;
       const locator = dependencies.getUploadLocator(objectId);
       const metadata: DocumentUploadMetadata = {
+        ...(operation ? { operation } : {}),
         title,
         ...locator,
         contentType: bundle ? cloudBundleContentType : "text/html",
         sizeBytes: file.size,
       };
+      if (operation) {
+        return uploadWithReceipt({
+          metadata: { ...metadata, operation },
+          accountId: identity.subject,
+          file,
+          objectId,
+          reserve: () => dependencies.reserveMetadata(client, metadata, identity.subject, request),
+          upload: dependencies.uploadFile,
+          commit: () => dependencies.createMetadata(client, metadata, identity.subject, request),
+          abandon: (confirmed) =>
+            dependencies.abandonMetadata(client, metadata, identity.subject, request, confirmed),
+          getReceipt: () => dependencies.getUploadReceipt!(client, operation, request),
+          ...(dependencies.reportCompensationFailure
+            ? { reportCompensationFailure: dependencies.reportCompensationFailure }
+            : {}),
+        });
+      }
       const id = await uploadReservedDocument({
         metadata,
         file,
