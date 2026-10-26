@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:net";
+import { createServer, createConnection } from "node:net";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -255,12 +255,100 @@ const runSmoke = async () => {
     assert.equal(execute(["get", selected.id]).status, 1);
     assert.equal(JSON.parse(text(execute(["usage", "--json"]).stdout)).documentCount, 2);
 
+    const managerLaunch = execute(["ui", "--json"]);
+    assertSuccessful(managerLaunch, "packed CLI manager launch");
+    const manager = JSON.parse(text(managerLaunch.stdout));
+    assert.notEqual(new URL(manager.origin).port, String(port));
+    const managerAgain = execute(["ui", "--json"]);
+    assertSuccessful(managerAgain, "packed CLI manager reuse");
+    assert.equal(JSON.parse(text(managerAgain.stdout)).origin, manager.origin);
+    assert.equal(JSON.parse(text(execute(["status", "--json"]).stdout)).pid, status.pid);
+    const shellResponse = await fetch(manager.origin);
+    assert.equal(shellResponse.status, 200);
+    const shellHtml = await shellResponse.text();
+    const script = /src="([^"]+\.js)"/.exec(shellHtml);
+    assert.ok(script, "installed manager shell includes its built JS");
+    assert.equal((await fetch(new URL(script[1], manager.origin))).status, 200);
+    const unauthorizedManager = await fetch(`${manager.origin}/api/list`, {
+      method: "POST",
+      headers: { Origin: manager.origin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(unauthorizedManager.status, 401);
+    const exchange = await fetch(`${manager.origin}/api/session`, {
+      method: "POST",
+      headers: { Origin: manager.origin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: new URL(manager.url).hash.slice(1) }),
+    });
+    assert.equal(exchange.status, 200);
+    const session = await exchange.json();
+    const managerHeaders = {
+      Origin: manager.origin,
+      Authorization: `Bearer ${session.token}`,
+      "Content-Type": "application/json",
+    };
+    assert.equal(
+      (
+        await fetch(`${manager.origin}/api/list`, {
+          method: "POST",
+          headers: { ...managerHeaders, Origin: `http://127.0.0.1:${port}` },
+          body: "{}",
+        })
+      ).status,
+      403
+    );
+    const importedBytes = Buffer.from("\ufeff<h1>installed browser import é</h1>\r\n");
+    const importResponse = await fetch(`${manager.origin}/api/import`, {
+      method: "POST",
+      headers: {
+        ...managerHeaders,
+        "Content-Type": "application/octet-stream",
+        "x-planview-filename": "installed.html",
+      },
+      body: importedBytes,
+    });
+    assert.equal(importResponse.status, 201);
+    const imported = await importResponse.json();
+    assert.equal((await fetch(`${manager.origin}/${imported.id}`)).status, 404);
+    const importedRead = execute(["get", imported.id]);
+    assertSuccessful(importedRead, "packed CLI retrieves exact manager import bytes");
+    assert.deepEqual(importedRead.stdout, importedBytes);
+    const inventoryResponse = await fetch(`${manager.origin}/api/list`, {
+      method: "POST",
+      headers: managerHeaders,
+      body: "{}",
+    });
+    const selectedImport = (await inventoryResponse.json()).snapshots.find(
+      (row) => row.id === imported.id
+    );
+    const removeImported = await fetch(`${manager.origin}/api/delete`, {
+      method: "POST",
+      headers: managerHeaders,
+      body: JSON.stringify({ id: selectedImport.id, generation: selectedImport.generation }),
+    });
+    assert.equal((await removeImported.json()).status, "deleted");
+    assert.equal(execute(["get", imported.id]).status, 1);
+
+    // An authenticated browser can disappear midway through an upload. Native
+    // stop must cancel that request and close both listeners before storage closes.
+    const managerPort = Number(new URL(manager.origin).port);
+    const interrupted = createConnection({ host: "127.0.0.1", port: managerPort });
+    interrupted.on("error", () => {});
+    await new Promise((resolveConnected, reject) => {
+      interrupted.once("connect", resolveConnected);
+      interrupted.once("error", reject);
+    });
+    interrupted.write(
+      `POST /api/import HTTP/1.1\r\nHost: 127.0.0.1:${managerPort}\r\nOrigin: ${manager.origin}\r\nAuthorization: Bearer ${session.token}\r\nContent-Type: application/octet-stream\r\nx-planview-filename: interrupted.html\r\nContent-Length: 10485760\r\n\r\n<`
+    );
     const stopped = execute(["stop"]);
+    interrupted.destroy();
     assertSuccessful(stopped, "packed CLI stop");
     assert.match(text(stopped.stdout), /stopped/);
     const after = execute(["status"]);
     assertSuccessful(after, "stopped packed CLI status");
     assert.match(text(after.stdout), /not running/);
+    await assert.rejects(fetch(manager.origin, { signal: AbortSignal.timeout(1000) }));
   } finally {
     if (execute !== undefined) {
       execute(["stop"]);

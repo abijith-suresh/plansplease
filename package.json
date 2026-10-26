@@ -39,13 +39,15 @@
     "verify": "npm run check && npm run build",
     "version-packages": "npm run release-policy && changeset version && npm install --package-lock-only --ignore-scripts",
     "local": "node scripts/local-dev.mjs",
-    "local:reset": "node scripts/local-dev.mjs reset"
+    "local:reset": "node scripts/local-dev.mjs reset",
+    "test:manager:browser": "npm run build --workspace @abijith-suresh/planview && node scripts/manager-browser-smoke.mjs"
   },
   "devDependencies": {
     "@astrojs/compiler": "2.13.1",
     "@biomejs/biome": "2.5.15",
     "@changesets/cli": "2.31.1",
     "@changesets/parse": "0.4.3",
+    "playwright": "1.64.1",
     "semver": "7.8.5",
     "sharp": "0.35.5",
     "typescript": "6.0.3"

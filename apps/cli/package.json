@@ -26,17 +26,21 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npm run build --workspace @planview/local && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js",
+    "build": "npm run build --workspace @planview/local && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js && npm run build:manager",
     "prepack": "npm run build",
-    "typecheck": "npm run build --workspace @planview/local && tsc --project tsconfig.json --noEmit",
+    "typecheck": "npm run build --workspace @planview/local && tsc --project tsconfig.json --noEmit && tsc --project ui/tsconfig.json",
     "test": "npm run build && npm run typecheck:test && node --test \"test/**/*.test.mts\"",
-    "typecheck:test": "tsc --project tsconfig.test.json"
+    "typecheck:test": "tsc --project tsconfig.test.json",
+    "build:manager": "tsc --project ui/tsconfig.json && vite build --config ui/vite.config.ts"
   },
   "devDependencies": {
+    "@planview/core": "0.1.0",
     "@planview/local": "0.1.0",
     "@types/node": "24.19.2",
     "esbuild": "0.28.2",
-    "@planview/core": "0.1.0"
+    "solid-js": "1.9.17",
+    "vite": "8.3.5",
+    "vite-plugin-solid": "2.11.14"
   },
   "dependencies": {
     "effect": "4.0.6"

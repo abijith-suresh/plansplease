@@ -72,3 +72,13 @@ leases, with the same mutation gate as publication and cleanup. If metadata
 removal succeeds but file removal fails, the snapshot becomes invisible and
 bounded reconciliation owns the remaining file. The cloud app and hosted MCP
 remain independent of these local operations.
+
+
+The optional local browser manager is a compiled Solid client served on a second
+loopback port in the same daemon process. Its HTTP adapter calls the same daemon
+application operations as the native API. It owns no SQLite connection, cloud
+client or additional persistent process. Browser sessions and native daemon
+credentials are separate. Only packaged trusted assets run on the manager
+origin; arbitrary HTML snapshots remain on the preview origin. Both listeners
+share lifecycle and stop together. Profile controls and local-to-cloud sharing
+are separate phases.

@@ -20,7 +20,7 @@ import {
 
 type DaemonCommand = Exclude<
   Command,
-  "publish" | "upload" | "login" | "logout" | "get" | "help" | "list" | "usage" | "delete"
+  "publish" | "upload" | "login" | "logout" | "get" | "help" | "list" | "usage" | "delete" | "ui"
 >;
 
 type OpenUrl = (url: string) => Promise<void>;
@@ -306,6 +306,44 @@ export const runInventoryCommand = (
               command,
               cause,
               message: `Could not ${command} local snapshots: ${describe(cause)}`,
+            })
+        )
+      );
+    })
+  );
+
+export const runManagerCommand = (
+  application: LocalApplication,
+  args: readonly string[],
+  stdout: StdoutWriter,
+  openUrl: OpenUrl
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, { allowJson: true, allowOpen: true, helpTopic: "ui" }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, "ui");
+      if (parsed.operands.length !== 0)
+        return Effect.fail(unexpectedArguments(parsed.operands, formatHelp("ui")));
+      return Effect.gen(function* () {
+        const launch = yield* application.manager();
+        yield* writeCommandResult(
+          stdout,
+          parsed.json ? "json" : "text",
+          launch,
+          (result) => `${result.url}\n`
+        );
+        if (parsed.open)
+          yield* Effect.tryPromise({
+            try: () => openUrl(launch.url),
+            catch: (cause) => openBrowserFailure("local manager", launch.url, cause),
+          });
+        return 0;
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DaemonCommandError({
+              command: "ui",
+              cause,
+              message: `Could not open the local manager: ${describe(cause)}. If the daemon predates this installation, run plansplease restart.`,
             })
         )
       );

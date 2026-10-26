@@ -180,6 +180,14 @@ jobs:
           test -f "$skills_project/.agents/skills/create-html/references/browser-native-patterns.md"
 
 
+      - name: Install Chromium for the installed manager browser smoke
+        run: npx playwright install --with-deps chromium
+
+      - name: Test the installed manager in Chromium
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node scripts/manager-browser-smoke.mjs
+
   cross-platform-packed-smoke:
     name: packed CLI smoke (${{ matrix.os }})
     strategy:

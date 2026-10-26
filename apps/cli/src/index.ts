@@ -19,6 +19,7 @@ import {
 } from "./arguments.js";
 import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "./cloud.js";
 import {
+  runManagerCommand,
   runInventoryCommand,
   runDaemonCommandFromArgs,
   runDocumentCommand,
@@ -324,6 +325,8 @@ const commandWithProfile = (
   }
 
   const application = applicationFor(profile);
+
+  if (argument === "ui") return runManagerCommand(application, trailing, stdout, openUrl);
 
   if (argument === "publish" || argument === "get") {
     return runDocumentCommand(argument, application, trailing, stdout, openUrl);

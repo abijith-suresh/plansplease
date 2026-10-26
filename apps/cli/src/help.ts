@@ -12,6 +12,7 @@ export const COMMANDS = [
   "list",
   "usage",
   "delete",
+  "ui",
   "help",
 ] as const;
 
@@ -34,6 +35,7 @@ Commands:
   usage                  Show logical storage usage and retention
   delete <id>            Delete one listed snapshot generation
   clean                  Remove expired snapshots and reconcile storage
+  ui                     Start the local manager and print a one-use launch link
   help [command]         Show help for a command
 
 Global options:
@@ -172,6 +174,21 @@ Options:
   -h, --help             Show this help message
   --generation <value>   Immutable generation printed by list (required)
   --json                 Print status, removal flags, file state and recovery
+`,
+  ui: `Usage: plansplease ui [options]
+
+Start a separate loopback manager listener in the selected profile's existing
+preview daemon. Print a short-lived one-use launch link with a fragment code.
+The browser receives an independent session, never the native daemon secret.
+Keep the link private. The launch code expires after one minute.
+The browser session lasts up to 8 hours and stays only in page memory.
+Stopping the daemon stops both management and all previews for this profile.
+Use plansplease stop, or the manager's Stop daemon & previews control.
+
+Options:
+  -h, --help             Show this help message
+  --open                 Explicitly open the manager in the default browser
+  --json                 Print url, origin and expiresAt as one JSON object
 `,
   help: `Usage: plansplease help [command]
 
