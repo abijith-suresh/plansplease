@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect } from "effect";
+import { testInstalledProfiles } from "./profile-controls-smoke.mjs";
 import { testInstalledRetention } from "./offline-retention-smoke.mjs";
 import { npmPackFilename } from "./npm-pack-result.mjs";
 
@@ -351,6 +352,11 @@ const runSmoke = async () => {
     assert.match(text(after.stdout), /not running/);
     await assert.rejects(fetch(manager.origin, { signal: AbortSignal.timeout(1000) }));
     await testInstalledRetention({
+      root,
+      installed: join(installedRoot, "dist/index.js"),
+      workspace,
+    });
+    await testInstalledProfiles({
       root,
       installed: join(installedRoot, "dist/index.js"),
       workspace,

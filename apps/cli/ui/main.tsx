@@ -22,7 +22,28 @@ type Usage = {
   quotaBytes: number;
   retentionMilliseconds: number;
 };
-type Status = { profile: string; appDataDir: string; previewOrigin: string; pid: number };
+type Status = {
+  profile: string;
+  appDataDir: string;
+  previewOrigin: string;
+  managerOrigin: string;
+  pid: number;
+  state: "running";
+};
+type ProfileCatalog = {
+  current: { name: string; appDataDir: string };
+  scope: "managed" | "isolated_override";
+  profiles: { name: string; selected: boolean; present: boolean; daemon: "not_checked" }[];
+  limited: boolean;
+  skippedEntries: number;
+};
+type ProfilePlan = {
+  target: { name: string; present: boolean };
+  launchCommand: string;
+  openCommand: string;
+  createCommand: string;
+  message: string;
+};
 type Deletion = { status: string; recovery: string; message?: string };
 const size = (bytes: number) =>
   bytes < 1024
@@ -52,6 +73,10 @@ function Shelf() {
   const [notice, setNotice] = createSignal("");
   const [error, setError] = createSignal("");
   const [status, setStatus] = createSignal<Status>();
+  const [profiles, setProfiles] = createSignal<ProfileCatalog>();
+  const [profilesError, setProfilesError] = createSignal("");
+  const [profileName, setProfileName] = createSignal("");
+  const [profilePlan, setProfilePlan] = createSignal<ProfilePlan>();
   const [usage, setUsage] = createSignal<Usage>();
   const [page, setPage] = createSignal<Page>({ snapshots: [] });
   const [cursor, setCursor] = createSignal<string>();
@@ -93,6 +118,14 @@ function Shelf() {
     setUsage(space);
     setPage(snapshots);
     setCursor(after);
+  };
+  const loadProfiles = async () => {
+    try {
+      setProfiles(await request<ProfileCatalog>("profiles", { limit: 50 }));
+      setProfilesError("");
+    } catch (cause) {
+      setProfilesError(describe(cause));
+    }
   };
   const work = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -462,13 +495,156 @@ function Shelf() {
             <div>
               <p class="eyebrow">LOCAL PREVIEWS, UNDER YOUR CONTROL</p>
               <p>Preview links stay available after your terminal command exits.</p>
-              <details>
-                <summary>Profile &amp; storage location</summary>
-                <code>{status()?.appDataDir}</code>
+              <details
+                class="profile-controls"
+                onToggle={(event) => {
+                  if (event.currentTarget.open && !profiles()) void work(loadProfiles);
+                }}
+              >
+                <summary>Profiles &amp; storage</summary>
                 <p>
-                  Use <code>plansplease --profile NAME ui</code> for another profile. Profile
-                  controls will follow separately.
+                  <strong>{status()?.profile}</strong> is running here, pid {status()?.pid}.
                 </p>
+                <dl class="profile-facts">
+                  <div>
+                    <dt>Storage</dt>
+                    <dd>
+                      <code>{status()?.appDataDir}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Preview origin</dt>
+                    <dd>
+                      <code>{status()?.previewOrigin}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Manager origin</dt>
+                    <dd>
+                      <code>{status()?.managerOrigin}</code>
+                    </dd>
+                  </div>
+                </dl>
+                <p>
+                  Every profile has its own storage, process and browser session. Leaving this page
+                  or preparing a selection keeps old preview links running. Stop each profile
+                  deliberately. This page can only stop <strong>{status()?.profile}</strong>.
+                </p>
+                <button
+                  type="button"
+                  class="quiet"
+                  disabled={busy()}
+                  onClick={() => void work(loadProfiles)}
+                >
+                  Refresh profiles
+                </button>
+                <Show when={profilesError()}>
+                  <p role="alert">{profilesError()}</p>
+                </Show>
+                <Show when={profiles()?.scope === "isolated_override"}>
+                  <p class="fine-print">
+                    Custom storage/runtime override: only this location is shown. Use a terminal
+                    with the intended environment to discover or launch other profiles.
+                  </p>
+                </Show>
+                <Show when={profiles()?.scope === "managed"}>
+                  <label class="profile-picker">
+                    Choose a profile
+                    <select
+                      aria-label="Choose a profile"
+                      value={
+                        profiles()?.profiles.some((profile) => profile.name === profileName())
+                          ? profileName()
+                          : ""
+                      }
+                      onChange={(event) => {
+                        setProfileName(event.currentTarget.value);
+                        setProfilePlan(undefined);
+                      }}
+                      disabled={busy()}
+                    >
+                      <option value="">Select a profile</option>
+                      <For each={profiles()?.profiles ?? []}>
+                        {(profile) => (
+                          <option value={profile.name}>
+                            {profile.name}
+                            {profile.selected ? " · current" : ""}
+                            {profile.present ? "" : " · not created"}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                  <label class="profile-picker">
+                    Or use a new name
+                    <input
+                      aria-label="New profile name"
+                      maxlength="32"
+                      value={profileName()}
+                      onInput={(event) => {
+                        setProfileName(event.currentTarget.value);
+                        setProfilePlan(undefined);
+                      }}
+                      placeholder="research"
+                      disabled={busy()}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="quiet"
+                    disabled={busy() || !profileName()}
+                    onClick={() =>
+                      void work(async () => {
+                        setProfilePlan(
+                          await request<ProfilePlan>("profile-plan", { name: profileName() })
+                        );
+                      })
+                    }
+                  >
+                    Prepare launch command
+                  </button>
+                  <p class="fine-print">
+                    Offline directory metadata only. Other daemon states are not checked.{" "}
+                    {profiles()?.limited
+                      ? "Partial list: directory/count bound reached. Enter a known name directly."
+                      : ""}{" "}
+                    {profiles()?.skippedEntries ?? 0} unsupported entries excluded.
+                  </p>
+                </Show>
+                <Show when={profilePlan()}>
+                  {(plan) => (
+                    <section class="profile-plan" aria-label="Selected profile launch">
+                      <p class="eyebrow">PREPARED / {plan().target.name}</p>
+                      <p>{plan().message}</p>
+                      <p>
+                        {plan().target.present
+                          ? "Existing profile storage."
+                          : "The profile is created only when you run the command."}{" "}
+                        Run without PLANVIEW_APP_DATA_DIR, PLANVIEW_DATA_DIR or PLANVIEW_RUNTIME_DIR
+                        overrides.
+                      </p>
+                      <code>{plan().openCommand}</code>
+                      <button
+                        type="button"
+                        class="quiet"
+                        onClick={() =>
+                          void work(async () => {
+                            await navigator.clipboard.writeText(plan().openCommand);
+                            setNotice(
+                              "Profile launch command copied. Run it deliberately in your terminal. This profile remains running."
+                            );
+                          })
+                        }
+                      >
+                        Copy profile launch command
+                      </button>
+                      <p class="fine-print">
+                        Omit --open to print a one-use link without opening a browser. For offline
+                        directory creation alone: <code>{plan().createCommand}</code>.
+                      </p>
+                    </section>
+                  )}
+                </Show>
               </details>
             </div>
             <div class="runtime-actions">

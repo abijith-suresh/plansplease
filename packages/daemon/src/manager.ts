@@ -257,6 +257,22 @@ export const openManager = async (options: ManagerOptions) => {
             response(res, 200, await options.application.list(args));
             return;
           }
+          case "/api/profiles":
+            only(payload, ["limit"]);
+            response(
+              res,
+              200,
+              await options.application.profilesList(
+                payload["limit"] === undefined ? undefined : (payload["limit"] as number)
+              )
+            );
+            return;
+          case "/api/profile-plan":
+            only(payload, ["name"]);
+            if (typeof payload["name"] !== "string")
+              throw new Error("Select a valid profile name.");
+            response(res, 200, await options.application.profilePlan(payload["name"]));
+            return;
           case "/api/usage":
             only(payload, []);
             response(res, 200, await options.application.usage());
@@ -268,6 +284,8 @@ export const openManager = async (options: ManagerOptions) => {
               appDataDir: options.appDataDir,
               previewOrigin: options.previewOrigin,
               pid: process.pid,
+              state: "running",
+              managerOrigin: origin,
             });
             return;
           case "/api/pin":

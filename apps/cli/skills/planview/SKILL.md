@@ -158,3 +158,26 @@ can remove the copy promptly. Pins are not backups or permanent availability.
 Manual selected delete can delete pins; cloud copies/receipts remain independent.
 After lost/unconfirmed pin responses inspect list for the same generation.
 Neither command silently selects a replacement or resurrects a missing copy.
+
+
+Use `plansplease profiles list --json` for offline bounded directory discovery.
+It does not open SQLite, credentials or cloud connections, check every daemon,
+or recurse into artifacts. Daemon state is deliberately not_checked. Follow
+`limited` and `skippedEntries`; the list can be partial. `profiles current --json`
+checks only the selected daemon and distinguishes unavailable from stopped.
+
+`profiles select NAME --json` prints validated launch instructions; it never
+persists a global default or starts/stops a daemon. Run `plansplease --profile
+NAME ui` deliberately, adding `--open` only for explicit browser opening.
+`profiles create NAME --json` creates directories only, with no service/database.
+Default keeps the original root; named profiles use profiles/NAME. Custom
+app-data/runtime overrides remain isolated. Remove those overrides before using
+cross-profile launch instructions. The manager only prepares a copyable command;
+it cannot launch/mutate another profile or transfer its browser session.
+
+Each intentionally active profile retains its own daemon and preview/manager
+origins. Leaving or selecting never stops an old profile: its links may still be
+needed. Stop each with `plansplease --profile NAME stop`. Fixed 30-day unpinned
+retention/1 GiB quota apply per profile. No profile delete, rename or purge exists.
+On Windows, profile ownership checks use a bounded hidden PowerShell ACL helper;
+if the OS policy blocks it, discovery fails closed without starting a service.

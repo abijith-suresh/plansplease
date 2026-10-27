@@ -1,5 +1,9 @@
 import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import {
+  createProfileOperations,
+  type ProfileCatalog,
+  type ProfilePlan,
+  type ProfileLocation,
   inspectDaemonShares,
   prepareDaemonShare,
   recordDaemonShare,
@@ -39,6 +43,7 @@ import { preparePublishSource } from "./publish-source.js";
 import { parseDocumentReferenceDetails } from "./reference.js";
 
 export type LocalOperation =
+  | "profiles"
   | "share"
   | "publish"
   | "get"
@@ -94,7 +99,17 @@ export type LocalGetOptions = Readonly<{
   readonly onChunk: (chunk: Uint8Array) => void | Promise<void>;
 }>;
 
+export type LocalProfileCurrent = Readonly<{
+  current: ProfileLocation;
+  daemon: LocalDaemonStatus | { state: "unavailable"; message: string };
+}>;
 export type LocalApplication = Readonly<{
+  readonly profilesList: (limit?: number) => Effect.Effect<ProfileCatalog, LocalApplicationFailure>;
+  readonly profilePlan: (name: string) => Effect.Effect<ProfilePlan, LocalApplicationFailure>;
+  readonly profileCreate: (
+    name: string
+  ) => Effect.Effect<ProfileLocation & { created: boolean }, LocalApplicationFailure>;
+  readonly profileCurrent: () => Effect.Effect<LocalProfileCurrent, LocalApplicationFailure>;
   readonly shareInspect: (
     id: string,
     operation?: string
@@ -290,7 +305,40 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
     );
   const manager = () =>
     withConfig("ui", resolveConfig, (config) => launchDaemonManager(config, daemonOptions));
+  const offlineProfile = <T>(
+    operation: (profiles: ReturnType<typeof createProfileOperations>) => Promise<T>
+  ) =>
+    withConfig("profiles", resolveConfig, (config) =>
+      Effect.tryPromise({
+        try: () => operation(createProfileOperations(config)),
+        catch: (cause) => localFailure("profiles", cause),
+      })
+    );
   return {
+    profilesList: (limit) => offlineProfile((profiles) => profiles.list(limit)),
+    profilePlan: (name) => offlineProfile((profiles) => profiles.plan(name)),
+    profileCreate: (name) => offlineProfile((profiles) => profiles.create(name)),
+    profileCurrent: () =>
+      withConfig("profiles", resolveConfig, (config) =>
+        Effect.gen(function* () {
+          const current = yield* Effect.tryPromise({
+            try: () => createProfileOperations(config).current(),
+            catch: (cause) => localFailure("profiles", cause),
+          });
+          const daemon = yield* inspectDaemon(config).pipe(
+            Effect.map((status) =>
+              status.state === "running" ? statusFromDescriptor(status.status) : status
+            ),
+            Effect.catch((cause) =>
+              Effect.succeed({
+                state: "unavailable" as const,
+                message: describe(cause).slice(0, 512),
+              })
+            )
+          );
+          return { current, daemon };
+        })
+      ),
     shareInspect: (id, operation) =>
       withConfig("share", resolveConfig, (config) =>
         inspectDaemonShares(config, daemonOptions, id, operation)
@@ -345,3 +393,5 @@ export type {
   SnapshotDeleteResult,
   SnapshotPinResult,
 } from "@planview/storage";
+
+export type { ProfileCatalog, ProfilePlan, ProfileLocation } from "@planview/daemon";

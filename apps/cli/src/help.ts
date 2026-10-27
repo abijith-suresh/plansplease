@@ -16,6 +16,7 @@ export const COMMANDS = [
   "pin",
   "unpin",
   "ui",
+  "profiles",
   "help",
 ] as const;
 
@@ -40,6 +41,7 @@ Commands:
   delete <id>            Delete one listed snapshot generation
   pin/unpin <id>         Protect a selected generation from automatic cleanup
   clean                  Remove expired snapshots and reconcile storage
+  profiles               Discover, inspect or deliberately create local profiles
   ui                     Start the local manager and print a one-use launch link
   help [command]         Show help for a command
 
@@ -209,6 +211,23 @@ Options:
   -h, --help             Show this help message
   --generation <value>   Immutable generation printed by list (required)
   --json                 Print status, removal flags, file state and recovery
+`,
+  profiles: `Usage: plansplease [--profile CURRENT] profiles [list|current|select NAME|create NAME] [options]
+
+list is offline directory metadata only: no daemon, SQLite, credentials or cloud.
+Default profile keeps the original data root; named profiles use profiles/NAME.
+current authenticates only the selected daemon; unavailable status is not stopped.
+select prints validated launch commands and never changes a global default.
+create makes private profile directories only; no service/database is started.
+Run the printed ui command deliberately; --open explicitly opens a browser.
+Each profile has its own daemon and two origins. Selecting never stops another
+profile; old preview links can keep its process alive. Stop with --profile NAME stop.
+Custom storage/runtime overrides are isolated; remove them before cross-profile use.
+
+Options:
+  --limit <1..100>        Maximum list entries (default 50); scan bound 256
+  --json                 Print bounded metadata/status/launch instructions
+  -h, --help             Show help without profile I/O
 `,
   ui: `Usage: plansplease ui [options]
 

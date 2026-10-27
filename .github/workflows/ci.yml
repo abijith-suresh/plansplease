@@ -190,6 +190,11 @@ jobs:
           TARBALL: ${{ steps.pack.outputs.tarball }}
         run: node scripts/offline-retention-smoke.mjs
 
+      - name: Test installed offline profile selection and isolation
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node scripts/profile-controls-smoke.mjs
+
       - name: Install Chromium for the installed manager browser smoke
         run: npx playwright install --with-deps chromium
 

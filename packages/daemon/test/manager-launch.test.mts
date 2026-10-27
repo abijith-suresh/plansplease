@@ -91,6 +91,8 @@ for (const failClose of [false, true]) {
         },
         {
           list: unexpected,
+          profilesList: unexpected,
+          profilePlan: unexpected,
           usage: unexpected,
           deleteSnapshot: unexpected,
           setPinned: unexpected,

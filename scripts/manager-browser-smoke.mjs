@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect } from "effect";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveAppDataPaths, normalizeMacosSystemPath } from "@planview/core";
 import { chromium } from "playwright";
 import { npmPackFilename } from "./npm-pack-result.mjs";
 
@@ -33,13 +34,28 @@ const port = await new Promise((resolvePort, reject) => {
     server.close(() => resolvePort(address.port));
   });
 });
+const home = join(fixture, "home");
+mkdirSync(home, { mode: 0o700 });
 const environment = {
   ...process.env,
   NODE_ENV: "test",
   PLANVIEW_TEST_DAEMON_PORT: String(port),
-  PLANVIEW_APP_DATA_DIR: join(fixture, "data"),
-  PLANVIEW_RUNTIME_DIR: join(fixture, "data", "runtime"),
+  PLANVIEW_DAEMON_STRICT_PORT: "false",
+  HOME: home,
+  USERPROFILE: home,
+  XDG_DATA_HOME: join(home, "data"),
+  LOCALAPPDATA: join(home, "local"),
 };
+for (const key of [
+  "PLANVIEW_APP_DATA_DIR",
+  "PLANVIEW_DATA_DIR",
+  "PLANVIEW_RUNTIME_DIR",
+  "PLANVIEW_PROFILE",
+])
+  delete environment[key];
+const data = normalizeMacosSystemPath(
+  resolveAppDataPaths({ env: environment, homeDir: home }).appDataDir
+);
 let execute;
 let browser;
 try {
@@ -74,7 +90,6 @@ try {
   // Seed only while no daemon exists, then close the fixture owner. This lets the
   // real UI show original expired eligibility without a test clock/runtime API.
   const expiredId = "expired" + "0".repeat(14);
-  const data = join(fixture, "data");
   mkdirSync(data, { recursive: true, mode: 0o700 });
   const { openStorage, openDocumentFileStore, createDocumentPublicationCoordinator } = await import(
     pathToFileURL(join(root, "packages/storage/dist/index.js")).href
@@ -122,6 +137,10 @@ try {
   });
   const page = await context.newPage();
   const failures = [];
+  let profileRequests = 0;
+  page.on("request", (req) => {
+    if (new URL(req.url()).pathname === "/api/profiles") profileRequests++;
+  });
   page.on("pageerror", (error) => failures.push(error.message));
   const sessionResponse = page.waitForResponse(
     (response) => response.url() === `${launch.origin}/api/session` && response.status() === 200
@@ -133,9 +152,98 @@ try {
   assert.equal(page.url(), launch.origin + "/", "fragment is removed before requests");
   assert.deepEqual(await context.cookies(launch.origin), []);
   assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
-  const nativeSecret = JSON.parse(
-    readFileSync(join(fixture, "data/runtime/daemon.json"), "utf8")
-  ).secret;
+  assert.equal(profileRequests, 0, "profile discovery is lazy until explicit panel expansion");
+  await page.getByText("Profiles & storage", { exact: true }).click();
+  await page.getByLabel("New profile name", { exact: true }).waitFor();
+  await page.getByLabel("New profile name", { exact: true }).fill("../outside");
+  await page.getByRole("button", { name: "Prepare launch command", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "profile name" }).waitFor();
+  await page.getByLabel("New profile name", { exact: true }).fill("research");
+  await page.getByRole("button", { name: "Prepare launch command", exact: true }).click();
+  await page.getByRole("region", { name: "Selected profile launch" }).waitFor();
+  await page.getByRole("button", { name: "Copy profile launch command", exact: true }).click();
+  assert.equal(
+    await page.evaluate(() => navigator.clipboard.readText()),
+    "plansplease --profile research ui --open"
+  );
+  assert.equal(execute("--profile", "research", "status").state, "stopped");
+  assert.equal(
+    execute("status").pid,
+    running.pid,
+    "planning does not replace/start/stop any daemon"
+  );
+  assert.equal(
+    execute("profiles", "list").profiles.some((profile) => profile.name === "research"),
+    false
+  );
+  const profileArtifacts = process.env.PLANVIEW_BROWSER_ARTIFACT_DIR;
+  if (profileArtifacts) {
+    mkdirSync(profileArtifacts, { recursive: true });
+    await page.screenshot({ path: join(profileArtifacts, "manager-profiles.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: join(profileArtifacts, "manager-profiles-mobile.png"),
+      fullPage: true,
+    });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+      "expanded profile controls must fit mobile width"
+    );
+    await page.setViewportSize({ width: 1440, height: 1100 });
+  }
+  // This explicit native command is the host authorization, independent of A's session.
+  const secondLaunch = execute("--profile", "research", "ui");
+  const secondStatus = execute("--profile", "research", "status");
+  assert.notEqual(secondStatus.pid, running.pid);
+  assert.notEqual(secondStatus.port, running.port);
+  const secondPage = await context.newPage();
+  const secondSessionResponse = secondPage.waitForResponse(
+    (response) =>
+      response.url() === `${secondLaunch.origin}/api/session` && response.status() === 200
+  );
+  await secondPage.goto(secondLaunch.url);
+  const secondToken = (await (await secondSessionResponse).json()).token;
+  await secondPage.getByRole("heading", { name: "Your local shelf." }).waitFor();
+  assert.equal(
+    (
+      await fetch(`${secondLaunch.origin}/api/status`, {
+        method: "POST",
+        headers: {
+          Origin: secondLaunch.origin,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      })
+    ).status,
+    401
+  );
+  assert.equal(
+    (
+      await fetch(`${launch.origin}/api/status`, {
+        method: "POST",
+        headers: {
+          Origin: launch.origin,
+          Authorization: `Bearer ${secondToken}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      })
+    ).status,
+    401
+  );
+  await secondPage.close();
+  assert.equal(
+    execute("--profile", "research", "status").pid,
+    secondStatus.pid,
+    "leaving a manager keeps its previews/process alive"
+  );
+  execute("--profile", "research", "stop");
+  assert.equal(execute("status").pid, running.pid, "stopping research leaves default alive");
+  await assert.rejects(fetch(secondLaunch.origin, { signal: AbortSignal.timeout(1000) }));
+  await page.getByText("Profiles & storage", { exact: true }).click();
+  const nativeSecret = JSON.parse(readFileSync(join(data, "runtime/daemon.json"), "utf8")).secret;
   const nativeWithBrowserSession = await fetch(`http://127.0.0.1:${port}/__planview/manager`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -287,6 +395,7 @@ try {
 } finally {
   await browser?.close();
   try {
+    execute?.("--profile", "research", "stop");
     execute?.("stop");
   } catch {}
   rmSync(fixture, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
