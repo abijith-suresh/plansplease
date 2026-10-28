@@ -41,11 +41,92 @@ export type ProfilePlan = Readonly<{
   requiresCleanEnvironment: true;
   message: string;
 }>;
+const OWNER_STAGES = [
+  "start",
+  "input_encoding",
+  "output_encoding",
+  "identity",
+  "stdin",
+  "acl",
+  "output",
+];
+/** Fixed vocabulary only: never return subprocess messages, commands, input or raw stderr. */
+const ownerFailureDetails = (error: unknown, stderr: unknown, started: number) => {
+  const fields = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const allowedCodes = [
+    "ENOENT",
+    "EACCES",
+    "EPERM",
+    "EINVAL",
+    "ENOEXEC",
+    "ETIMEDOUT",
+    "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+  ];
+  const code =
+    typeof fields["code"] === "number" &&
+    Number.isSafeInteger(fields["code"]) &&
+    fields["code"] >= -2147483648 &&
+    fields["code"] <= 4294967295
+      ? fields["code"]
+      : typeof fields["code"] === "string" && allowedCodes.includes(fields["code"])
+        ? (fields["code"] as string)
+        : "other";
+  const signal =
+    typeof fields["signal"] === "string" &&
+    ["SIGTERM", "SIGKILL", "SIGABRT", "SIGINT"].includes(fields["signal"])
+      ? (fields["signal"] as string)
+      : fields["signal"] == null
+        ? "none"
+        : "other";
+  const killed = fields["killed"] === true;
+  let stage = "unknown";
+  for (const line of (typeof stderr === "string" ? stderr.slice(0, 64 * 1024) : "").split(
+    /\r?\n/
+  )) {
+    const match = /^PVOWNER:stage:([a-z_]+)$/.exec(line);
+    if (match && OWNER_STAGES.includes(match[1]!)) stage = match[1]!;
+  }
+  const category = ["ENOENT", "EACCES", "EPERM", "EINVAL", "ENOEXEC"].includes(String(code))
+    ? "launch"
+    : code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+      ? "output_limit"
+      : killed || (signal !== "none" && signal !== "other")
+        ? "terminated"
+        : typeof code === "number"
+          ? "exit"
+          : "other";
+  return JSON.stringify({
+    category,
+    code,
+    signal,
+    killed,
+    elapsedMs: Math.min(60000, Math.max(0, Math.round(performance.now() - started))),
+    stage,
+  });
+};
 // Node exposes no Windows file-owner SID. Query only ACL owner metadata in one
 // bounded, hidden native helper; it never reads profile files or starts services.
 const windowsOwners = async (paths: readonly string[]): Promise<readonly boolean[]> => {
   if (process.platform !== "win32" || paths.length === 0) return paths.map(() => true);
-  const script = `[Console]::InputEncoding = New-Object System.Text.UTF8Encoding; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; $ErrorActionPreference = 'Stop'; $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $owners = @($identity.User.Value, $identity.Owner.Value); $paths = ConvertFrom-Json ([Console]::In.ReadToEnd()); $result = @($paths | ForEach-Object { try { $owners -contains (Get-Acl -LiteralPath $_ -ErrorAction Stop).GetOwner([System.Security.Principal.SecurityIdentifier]).Value } catch { $false } }); ConvertTo-Json -InputObject $result -Compress`;
+  // Preserve statement order and PowerShell error behavior while recording only
+  // fixed stage labels. In particular, encoding setters still precede Stop.
+  const script = `
+[Console]::Error.WriteLine('PVOWNER:stage:start')
+[Console]::Error.WriteLine('PVOWNER:stage:input_encoding')
+[Console]::InputEncoding = New-Object System.Text.UTF8Encoding
+[Console]::Error.WriteLine('PVOWNER:stage:output_encoding')
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding
+$ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('PVOWNER:stage:identity')
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$owners = @($identity.User.Value, $identity.Owner.Value)
+[Console]::Error.WriteLine('PVOWNER:stage:stdin')
+$paths = ConvertFrom-Json ([Console]::In.ReadToEnd())
+[Console]::Error.WriteLine('PVOWNER:stage:acl')
+$result = @($paths | ForEach-Object { try { $owners -contains (Get-Acl -LiteralPath $_ -ErrorAction Stop).GetOwner([System.Security.Principal.SecurityIdentifier]).Value } catch { $false } })
+[Console]::Error.WriteLine('PVOWNER:stage:output')
+ConvertTo-Json -InputObject $result -Compress`;
+
   const executable = join(
     process.env["SystemRoot"] ?? "C:\\Windows",
     "System32",
@@ -53,6 +134,7 @@ const windowsOwners = async (paths: readonly string[]): Promise<readonly boolean
     "v1.0",
     "powershell.exe"
   );
+  const started = performance.now();
   const result = await new Promise<string>((accept, reject) => {
     const child = execFile(
       executable,
@@ -64,11 +146,15 @@ const windowsOwners = async (paths: readonly string[]): Promise<readonly boolean
         Buffer.from(script, "utf16le").toString("base64"),
       ],
       { windowsHide: true, timeout: 5000, maxBuffer: 64 * 1024, encoding: "utf8" },
-      (error, stdout) =>
+      (error, stdout, stderr) =>
         error
           ? reject(
               new Error(
-                "Could not verify Windows profile ownership with PowerShell. Directories may already exist after creation; inspect them before retrying. Profile operations never start a daemon."
+                `Could not verify Windows profile ownership with PowerShell. Safe diagnostic: ${ownerFailureDetails(
+                  error,
+                  stderr,
+                  started
+                )}. Directories may already exist after creation; inspect them before retrying. Profile operations never start a daemon.`
               )
             )
           : accept(stdout)
@@ -76,7 +162,12 @@ const windowsOwners = async (paths: readonly string[]): Promise<readonly boolean
     child.stdin?.on("error", () => {});
     child.stdin?.end(JSON.stringify(paths));
   });
-  const flags: unknown = JSON.parse(result.replace(/^\uFEFF/, ""));
+  let flags: unknown;
+  try {
+    flags = JSON.parse(result.replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error("Invalid Windows profile ownership response.");
+  }
   if (
     !Array.isArray(flags) ||
     flags.length !== paths.length ||
