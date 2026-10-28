@@ -17,6 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect } from "effect";
 import { npmPackFilename } from "./npm-pack-result.mjs";
+import { probeWindowsFixtureOwners } from "./windows-profile-owner-probe.mjs";
 
 export async function testInstalledProfiles({ root, installed, workspace }) {
   const home = join(workspace, "profile home é");
@@ -120,7 +121,21 @@ export async function testInstalledProfiles({ root, installed, workspace }) {
     const plan = execute("default", "profiles", "select", "research");
     assert.equal(plan.openCommand, "plansplease --profile research ui --open");
     assert.equal(existsSync(data), false);
-    assert.equal(execute("default", "profiles", "create", "research").created, true);
+    const firstCreate = command("default", "profiles", "create", "research");
+    if (process.platform === "win32" && firstCreate.status !== 0) {
+      try {
+        probeWindowsFixtureOwners({
+          workspace,
+          paths: [data, join(data, "profiles"), namedData],
+          env,
+        });
+      } catch {
+        // Keep the actual installed assertion even if the independent probe is incomplete.
+        process.stdout.write(`${JSON.stringify({ fixtureOwnerProbeIncomplete: true })}\n`);
+      }
+    }
+    assert.equal(firstCreate.status, 0, firstCreate.stderr);
+    assert.equal(JSON.parse(firstCreate.stdout).created, true);
     assert.deepEqual(readdirSync(namedData), []);
     assert.equal(execute("default", "profiles", "current").daemon.state, "stopped");
     assert.equal(existsSync(join(data, "metadata.sqlite")), false);
