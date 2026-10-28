@@ -89,5 +89,6 @@ credentials are separate. Only packaged trusted assets run on the manager
 origin; arbitrary HTML snapshots remain on the preview origin. Both listeners
 share lifecycle and stop together. Generation-bound pin/unpin uses shared daemon
 operations and SQLite state; automatic cleanup checks current pins at final deletion.
-Pins count toward finite quota and do not renew access clocks. Profile controls
-remain pending; CLI sharing does not expose cloud credentials or mutation to the manager.
+Pins count toward finite quota and do not renew access clocks. Offline profile discovery and native creation share validated directory operations.
+Browser selection prepares a CLI instruction and cannot launch or mutate another
+profile. No central daemon is introduced; CLI sharing does not expose cloud credentials or mutation to the manager.

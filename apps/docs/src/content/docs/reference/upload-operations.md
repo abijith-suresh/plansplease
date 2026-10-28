@@ -135,5 +135,5 @@ cloud uploads allow 8 MiB. The existing local 30-day retention and 1 GiB quota
 do not promise permanent offline retention. Explicit generation-bound pin/unpin
 is available through the local CLI and manager within the finite quota. Sharing
 never pins automatically. Shared local outcomes expose pinned, expiresAt=null
-while pinned, and unpinnedExpiresAt for the original access clock. Profile controls
-remain pending.
+while pinned, and unpinnedExpiresAt for the original access clock. Profile controls are local-only directory discovery and explicit launch instructions;
+profiles never share cloud credentials or receipts.

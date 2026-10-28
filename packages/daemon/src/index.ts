@@ -1,3 +1,5 @@
+import { createProfileOperations } from "./profiles.js";
+export * from "./profiles.js";
 import { randomBytes } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import {
@@ -1025,6 +1027,7 @@ const openDaemon = async (config: DaemonConfig) => {
       publication: publicationCoordinator,
       snapshots,
       operationGate,
+      profiles: createProfileOperations(config),
     });
     const sharing = createDaemonSharing({
       metadataStore: openedMetadataStore,

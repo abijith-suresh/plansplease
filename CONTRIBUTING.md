@@ -124,3 +124,22 @@ checks quota refusal for publication/import, restart, unpin expiry, explicit
 delete, concurrent mutations and exact bundle bytes. The same exercise runs in
 native Windows/macOS packed smoke and Linux packaging CI. It changes no runtime
 quota, retention clock or shared settings.
+
+
+Installed profile checks run with `node scripts/profile-controls-smoke.mjs`
+after a CLI build; `TARBALL` can reuse a verified package. The same helper runs
+inside native Windows/macOS packed smoke. It checks offline discovery/creation,
+malformed and stale current-profile descriptors, same-ID byte/pin/receipt isolation,
+independent ports and sessions, native-secret rejection, bounded profile counts
+and symlinks/junctions. It measures daemon PID counts across planning, explicit
+launch and independent shutdown. Its browser-launch observer intercepts the
+installed CLI's platform launcher, so only `--open` records a launch and CI never
+opens an unsolicited system browser. Windows profile ACL metadata checks use
+short hidden PowerShell processes, with a five-second deadline and no persistent
+helper. It uses explicit standard streams, bounded ASCII/base64 path transport
+and direct .NET owner ACL reads, without cmdlet autoload or console encoding
+setters. Batches support at most 100 paths and 64 KiB of encoded input. The helper
+also omits inherited `PSModulePath` only from its copied child environment. The
+caller environment and current-user/token-owner SID policy are unchanged. The
+Chromium workflow exercises the actual two-profile manager flow,
+including lazy discovery and copyable command selection with no authority transfer.

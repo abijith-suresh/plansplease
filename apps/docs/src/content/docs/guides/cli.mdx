@@ -238,3 +238,56 @@ The additive metadata v4 migration preserves generations, access clocks and shar
 attempts/receipts. Older writers refuse v4 on open. Stop older daemons before
 upgrading; updated clients reject older inventory responses that lack explicit
 pin/retention fields rather than misreporting pinned expiry.
+
+
+## Choose a local profile
+
+```sh
+plansplease profiles list --limit 50 --json
+plansplease --profile research profiles current --json
+plansplease profiles create research --json
+plansplease profiles select research --json
+plansplease --profile research ui
+plansplease --profile research ui --open
+```
+
+`list` reads directory metadata offline. It does not open databases, credentials
+or cloud connections, inspect daemon descriptors, start services or recurse into
+artifact folders. It returns up to 100 entries, with at most 256 directory entries
+examined and a 64-ancestor path bound. `limited` means the result can be partial;
+enter a known name directly with `select`. Unsupported names, non-directories,
+symlinks/junctions and foreign-owned directories are excluded or refused. POSIX
+profile roots must be private; Windows ownership is checked using a bounded
+hidden PowerShell ACL helper, with no persistent helper process. If OS policy
+blocks this metadata check, discovery fails closed. Corporate policies still
+need manual confirmation.
+
+`current` reports the selected name and paths and authenticates only its daemon.
+A missing/stale descriptor is stopped; malformed, mismatched or live-but-failed
+status is unavailable, never silently stopped. The manager reports its own live
+PID and distinct preview/manager origins. Other profiles' runtime states are not
+checked during discovery.
+
+`select NAME` prints a launch plan. It changes no global default. The manager's
+**Profiles & storage** controls prepare the same command; it must be copied and
+run deliberately in a terminal. There is no cross-profile browser authority or
+launch API. `ui` creates missing storage and starts/reuses that profile's daemon;
+`--open` explicitly opens a browser. `profiles create NAME` creates directories
+without starting a process or opening a database. If creation fails or its result
+is unconfirmed, directories may remain; inspect discovery and retry the same name
+deliberately. No cleanup, delete, rename or purge is provided.
+
+Default remains at the original Planview data root, and named profiles remain
+under `profiles/NAME`. Existing `--profile` and `PLANVIEW_PROFILE` selection still
+apply only to that invocation/environment. No paths or data move. Custom
+`PLANVIEW_APP_DATA_DIR`, `PLANVIEW_DATA_DIR` or `PLANVIEW_RUNTIME_DIR` locations
+are isolated to their current scope; cross-profile instructions are refused for
+custom locations. Run launch instructions without these overrides so the named
+profile resolves to the displayed managed location.
+
+Each active profile owns its storage, daemon process and two listener origins.
+A browser session or native secret from one is refused at another. Selecting or
+leaving keeps older previews alive and can intentionally leave multiple daemon
+processes running. Stop each explicitly with `--profile NAME stop`; stopping one
+does not stop the others. Retention remains 30 days since access for unpinned
+copies, with explicit pins inside the fixed 1 GiB logical quota per profile.

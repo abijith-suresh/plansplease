@@ -1,3 +1,4 @@
+import type { ProfileOperations } from "./profiles.js";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,10 +19,12 @@ export const createDaemonApplication = ({
   publication,
   snapshots,
   operationGate,
+  profiles,
 }: {
   publication: DocumentPublicationCoordinator;
   snapshots: ReturnType<typeof createSnapshotManagement>;
   operationGate: OperationGate;
+  profiles?: ProfileOperations;
 }) => {
   const publishSource = (path: string, signal?: AbortSignal) =>
     operationGate(
@@ -50,6 +53,14 @@ export const createDaemonApplication = ({
     }
   };
   return {
+    profilesList: (limit?: number) => {
+      if (!profiles) throw new Error("Profile discovery is unavailable.");
+      return profiles.list(limit);
+    },
+    profilePlan: (name: string) => {
+      if (!profiles) throw new Error("Profile selection is unavailable.");
+      return profiles.plan(name);
+    },
     list: (options: Parameters<typeof snapshots.list>[0]) =>
       Effect.runPromise(snapshots.list(options)),
     usage: () => Effect.runPromise(snapshots.usage()),

@@ -20,7 +20,17 @@ import {
 
 type DaemonCommand = Exclude<
   Command,
-  "publish" | "upload" | "login" | "logout" | "get" | "help" | "list" | "usage" | "delete" | "ui"
+  | "publish"
+  | "upload"
+  | "login"
+  | "logout"
+  | "get"
+  | "help"
+  | "list"
+  | "usage"
+  | "delete"
+  | "ui"
+  | "profiles"
 >;
 
 type OpenUrl = (url: string) => Promise<void>;
@@ -365,6 +375,82 @@ export const runManagerCommand = (
               command: "ui",
               cause,
               message: `Could not open the local manager: ${describe(cause)}. If the daemon predates this installation, run plansplease restart.`,
+            })
+        )
+      );
+    })
+  );
+
+export const runProfilesCommand = (
+  application: LocalApplication,
+  args: readonly string[],
+  stdout: StdoutWriter
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, { allowJson: true, valueOptions: ["--limit"], helpTopic: "profiles" }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, "profiles");
+      const action = parsed.operands[0] ?? "list";
+      if (
+        !["list", "current", "select", "create"].includes(action) ||
+        parsed.operands.length !==
+          (action === "select" || action === "create" ? 2 : parsed.operands.length === 0 ? 0 : 1) ||
+        (action !== "list" && parsed.named?.["--limit"] !== undefined)
+      )
+        return Effect.fail(unexpectedArguments(parsed.operands, formatHelp("profiles")));
+      return Effect.gen(function* () {
+        const format: OutputFormat = parsed.json ? "json" : "text";
+        if (action === "current") {
+          const result = yield* application.profileCurrent();
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (value) =>
+              `${value.current.name}: ${value.daemon.state}\nStorage: ${value.current.appDataDir}\n${value.daemon.state === "unavailable" ? value.daemon.message + "\n" : value.daemon.state === "running" ? `pid ${value.daemon.pid}, port ${value.daemon.port}\n` : "No daemon running.\n"}`
+          );
+          return result.daemon.state === "unavailable" ? 1 : 0;
+        }
+        if (action === "list") {
+          const result = yield* application.profilesList(
+            parsed.named?.["--limit"] === undefined ? undefined : Number(parsed.named["--limit"])
+          );
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (value) =>
+              `Current: ${value.current.name}. Scope: ${value.scope}. Daemon states not checked.\n${value.profiles.map((profile) => `${profile.selected ? "*" : " "} ${profile.name}${profile.present ? "" : " (not created)"}\n`).join("")}${value.limited ? "Bound reached; this is a partial list. Use select NAME for a known profile.\n" : ""}${value.skippedEntries} unsupported entries excluded.\n`
+          );
+          return 0;
+        }
+        const name = parsed.operands[1] ?? "";
+        if (action === "create") {
+          const result = yield* application.profileCreate(name);
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (value) =>
+              `${value.name}: ${value.created ? "created" : "already exists"}. No daemon started.\n`
+          );
+        } else {
+          const result = yield* application.profilePlan(name);
+          yield* writeCommandResult(
+            stdout,
+            format,
+            result,
+            (value) =>
+              `${value.message}\n${value.launchCommand}\nExplicit browser opening: ${value.openCommand}\n`
+          );
+        }
+        return 0;
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DaemonCommandError({
+              command: "profiles",
+              cause,
+              message: `Profile operation failed: ${describe(cause)}`,
             })
         )
       );

@@ -743,3 +743,45 @@ dialog > p {
   color: var(--moss, #355344);
   font-weight: 600;
 }
+
+.profile-controls {
+  max-width: 700px;
+}
+.profile-facts div {
+  margin: 12px 0;
+}
+.profile-facts dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+.profile-facts dd {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.profile-picker {
+  display: block;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.profile-picker input,
+.profile-picker select {
+  display: block;
+  width: min(100%, 360px);
+  margin-top: 6px;
+  padding: 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+}
+.profile-plan {
+  margin-top: 20px;
+  padding: 18px;
+  background: #e9edde;
+  border-left: 3px solid var(--moss);
+}
+.profile-plan > code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+}
