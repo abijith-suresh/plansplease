@@ -240,8 +240,9 @@ export async function testInstalledProfiles({ root, installed, workspace }) {
     pids.push(statusA.pid);
     const tokenA = await exchange(a);
     const planned = await api(a.origin, tokenA, "profile-plan", { name: "research" });
-    assert.equal(planned.status, 200);
-    assert.equal((await planned.json()).target.name, "research");
+    const plannedResult = await planned.json();
+    assert.equal(planned.status, 200, JSON.stringify(plannedResult).slice(0, 4096));
+    assert.equal(plannedResult.target.name, "research");
     assert.equal(
       execute("research", "status").state,
       "stopped",
