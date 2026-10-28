@@ -631,7 +631,7 @@ export async function preparePrerelease(root, destination, input, options = {}) 
     );
     await options.checkInstalled?.(installation, manifest);
     if (sourceFingerprint(root) !== before) invalid("Preparation changed the source checkout.");
-    return { directory, manifest };
+    return { directory, manifestSha256: hash(bytes), manifest };
   } catch (error) {
     rmSync(directory, { recursive: true, force: true });
     throw new Error("Prerelease preparation failed; its partial artifact directory was removed.", {

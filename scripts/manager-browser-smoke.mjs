@@ -341,7 +341,7 @@ try {
     cwd: fixture,
     env: environment,
   });
-  assert.equal(retrieved.status, 0);
+  assert.equal(retrieved.status, 0, retrieved.stderr?.toString().slice(0, 4096));
   assert.deepEqual(retrieved.stdout, original);
   assert.equal(await page.evaluate(() => window.artifactExecuted), undefined);
   assert.equal((await fetch(`${launch.origin}/${imported.id}`)).status, 404);
