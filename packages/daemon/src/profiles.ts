@@ -230,7 +230,17 @@ ConvertTo-Json -InputObject $result -Compress`;
         "-EncodedCommand",
         Buffer.from(script, "utf16le").toString("base64"),
       ],
-      { windowsHide: true, timeout: 5000, maxBuffer: 64 * 1024, encoding: "utf8" },
+      {
+        // WinPS must construct its own module path when reached through Node
+        // from PowerShell 7. Leave the caller's environment unchanged.
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(([name]) => name.toLowerCase() !== "psmodulepath")
+        ),
+        windowsHide: true,
+        timeout: 5000,
+        maxBuffer: 64 * 1024,
+        encoding: "utf8",
+      },
       (error, stdout, stderr) =>
         error
           ? reject(

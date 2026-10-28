@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import ts from "typescript";
 
@@ -18,6 +19,7 @@ const names = [
   "OWNER_PATH_STATES",
   "OWNER_ERROR_CATEGORIES",
   "ownerPathDetails",
+  "windowsOwners",
 ];
 const statements = source.statements.filter(
   (statement) =>
@@ -147,6 +149,62 @@ test("stage instrumentation preserves original helper ordering and resource boun
 const pathDetails = new Function("createHash", `${emitted}; return ownerPathDetails;`)(
   createHash
 ) as (stderr: unknown, paths: readonly string[]) => string;
+
+test("the actual Windows owner helper removes inherited module paths only in its child environment", async () => {
+  const environment = Object.freeze({
+    PSModulePath: "PowerShell 7 modules",
+    PSMODULEPATH: "another casing",
+    pSmOdUlEpAtH: "mixed casing",
+    SystemRoot: "C:\\Windows",
+    PATH: "preserved executable path",
+    UNRELATED: "preserved value",
+  });
+  let calls = 0;
+  const capturedExec = (
+    _executable: string,
+    _args: string[],
+    options: {
+      env: Record<string, string>;
+      windowsHide: boolean;
+      timeout: number;
+      maxBuffer: number;
+    },
+    callback: (error: null, stdout: string, stderr: string) => void
+  ) => {
+    calls++;
+    assert.deepEqual(options.env, {
+      SystemRoot: environment.SystemRoot,
+      PATH: environment.PATH,
+      UNRELATED: environment.UNRELATED,
+    });
+    assert.equal(options.windowsHide, true);
+    assert.equal(options.timeout, 5000);
+    assert.equal(options.maxBuffer, 64 * 1024);
+    return {
+      stdin: {
+        on: () => undefined,
+        end: (input: string) => {
+          assert.deepEqual(JSON.parse(input), ["private fixture é"]);
+          callback(null, "[true]", "");
+        },
+      },
+    };
+  };
+  const ownerHelper = new Function(
+    "execFile",
+    "process",
+    "join",
+    "createHash",
+    `${emitted}; return windowsOwners;`
+  )(capturedExec, { platform: "win32", env: environment }, join, createHash) as (
+    paths: readonly string[]
+  ) => Promise<readonly boolean[]>;
+  assert.deepEqual(await ownerHelper(["private fixture é"]), [true]);
+  assert.equal(calls, 1);
+  assert.equal(environment.PSModulePath, "PowerShell 7 modules");
+  assert.equal(environment.PSMODULEPATH, "another casing");
+  assert.equal(environment.pSmOdUlEpAtH, "mixed casing");
+});
 
 test("per-path diagnostics distinguish lookup, extraction and mismatch without returning path or SID material", () => {
   const paths = ["private é path", "another secret path", "third private", "fourth private"];

@@ -136,5 +136,8 @@ launch and independent shutdown. Its browser-launch observer intercepts the
 installed CLI's platform launcher, so only `--open` records a launch and CI never
 opens an unsolicited system browser. Windows profile ACL metadata checks use
 short hidden PowerShell processes, with a five-second deadline and no persistent
-helper. The Chromium workflow exercises the actual two-profile manager flow,
+helper. The helper omits inherited `PSModulePath` only from its child environment
+so Windows PowerShell builds its own module paths when launched through Node from
+PowerShell 7. The caller environment and ownership policy are unchanged. The
+Chromium workflow exercises the actual two-profile manager flow,
 including lazy discovery and copyable command selection with no authority transfer.
