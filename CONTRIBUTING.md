@@ -54,6 +54,25 @@ maintainer enables it.
 
 Do not enable npm publishing or add registry credentials in a feature change.
 
+## Manual dev/alpha preparation
+
+The separate `prepare-prerelease` workflow is manual, trusted-main-only and
+artifact-only. It prepares `0.0.0-{dev|alpha}.YYYYMMDD.RUN.ATTEMPT` from the exact
+source commit in an owned temporary snapshot. It never changes the bound source
+version/lock/Changesets or creates a version PR. `publish=true` always refuses;
+no publication, credentials, OIDC write permission, Release or tag movement is
+implemented. The existing stable release policy remains separate.
+
+See [candidate preparation and transfer](docs/prerelease-artifacts.md) for pinned
+Node/npm, offline cache, hashes, installation and explicit daemon lifecycle.
+The only public package is `@abijith-suresh/planview`; private workspaces stay
+bundled in its CLI/daemon. Effect remains an exact external dependency. These
+artifacts require a prepared npm cache and are not self-contained installers.
+Build identity is available offline through `plansplease build-info`. Candidate
+start/reuse requires a matching owned daemon; `stop` is explicit and does not
+change another profile. Final corporate-laptop policy, actual interactive/live
+cloud checks and any publication/channel authorization remain owner work later.
+
 ## Workspace boundaries
 
 `apps/` contains deployable applications and the public CLI. `packages/` contains

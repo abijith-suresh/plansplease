@@ -18,6 +18,33 @@ Tests use local fixtures and do not need production accounts. The public CLI
 requires a patch Changeset for user-facing changes before 1.0.0. Publishing is
 disabled until maintainers explicitly enable it.
 
+## Manual candidate preparation
+
+The separate manual `prepare-prerelease` workflow prepares one
+`@abijith-suresh/planview` CLI candidate from an exact source SHA. It accepts only
+trusted-main dev/alpha dispatches. `publish=true` always fails. No source version,
+lockfile, Changeset, version PR, registry tag or GitHub Release is changed.
+
+Candidate versions use `0.0.0-{dev|alpha}.YYYYMMDD.RUN.ATTEMPT`. The Linux bundle
+contains the tarball, a bounded per-file SHA-256 manifest and SHA256SUMS. Windows
+PowerShell downloads, verifies and installs those same bytes into an unrelated
+Unicode/spaces prefix with lifecycle scripts disabled. The candidate bundles
+private workspaces and manager assets; Effect 4.0.6 remains external and must
+already be in the destination npm cache. Node 24.19.0, npm 11.16.0 and Windows
+PowerShell 5.1 are required. The tarball is not a self-contained installer.
+
+Use `plansplease build-info` offline to inspect the source identity. Candidate
+start/reuse requires a matching profile daemon. Inspect status and stop a
+different owned build deliberately before starting the candidate; this stops its
+preview and manager links, while other profiles remain independent. Hashes prove
+byte consistency, not publisher authentication. Compare the manifest hash with a
+trusted workflow receipt before transferring it. See
+[the repository transfer guide](https://github.com/abijith-suresh/plansplease/blob/main/docs/prerelease-artifacts.md)
+for commands and cache prerequisites. Before this workflow lands on main, its
+canonical Linux-to-Windows dispatch still needs a manual acceptance run. Corporate
+laptop interaction, live cloud and all publication/auth decisions remain later
+owner work.
+
 ## Full local workspace
 
 From the repository root, run:

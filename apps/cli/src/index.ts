@@ -1,5 +1,5 @@
 import { shareSnapshot } from "./share.js";
-import { isValidDocumentId } from "@planview/core";
+import { isValidDocumentId, RUNTIME_BUILD } from "@planview/core";
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
@@ -367,6 +367,19 @@ const commandWithProfile = (
     return isVersionOption(argument)
       ? writeOutput(stdout, formatVersion()).pipe(Effect.as(0))
       : writeHelp(stdout);
+  }
+
+  if (argument === "build-info") {
+    if (trailing.length === 1 && isHelpOption(trailing[0] ?? ""))
+      return writeHelp(stdout, "build-info");
+    if (trailing.length && !(trailing.length === 1 && trailing[0] === "--json"))
+      return Effect.fail(
+        unexpectedArguments(trailing, "build-info accepts only --json or --help.")
+      );
+    return writeOutput(
+      stdout,
+      `${JSON.stringify({ name: packageJson.name, version: VERSION, build: RUNTIME_BUILD })}\n`
+    ).pipe(Effect.as(0));
   }
 
   if (!isCommand(argument)) {

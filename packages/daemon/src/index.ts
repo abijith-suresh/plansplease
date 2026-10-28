@@ -1,3 +1,9 @@
+import {
+  RUNTIME_BUILD,
+  RUNTIME_VERSION,
+  candidateDaemonMatches,
+  type BuildIdentity,
+} from "@planview/core";
 import { createProfileOperations } from "./profiles.js";
 export * from "./profiles.js";
 import { randomBytes } from "node:crypto";
@@ -177,6 +183,8 @@ const isTestProcess = () => {
 
 export type RuntimeDescriptor = Readonly<{
   readonly version: typeof DAEMON_DESCRIPTOR_VERSION;
+  readonly packageVersion?: string;
+  readonly build?: BuildIdentity;
   readonly pid: number;
   readonly host: string;
   readonly port: number;
@@ -1062,6 +1070,7 @@ const openDaemon = async (config: DaemonConfig) => {
       }, requestSignal);
     const runtimeDescriptor = {
       version: DAEMON_DESCRIPTOR_VERSION as typeof DAEMON_DESCRIPTOR_VERSION,
+      ...(RUNTIME_BUILD === null ? {} : { packageVersion: RUNTIME_VERSION, build: RUNTIME_BUILD }),
       pid: process.pid,
       host: config.host,
       port: config.port,
@@ -1784,6 +1793,13 @@ const startWithLock = async (
 ) => {
   const current = await inspectDaemonPromise(config, signal);
   if (current.state === "running") {
+    if (!candidateDaemonMatches(current.descriptor) || !candidateDaemonMatches(current.status))
+      throw new DaemonRequestError({
+        cause: undefined,
+        path: DAEMON_STATUS_PATH,
+        message:
+          "This profile is running a different build. Inspect it and explicitly stop that owned profile before starting this candidate; other profiles are unchanged.",
+      });
     return { ...current, reused: true };
   }
 

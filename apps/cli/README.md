@@ -309,3 +309,15 @@ copies. Receipt history survives local/cloud deletion and does not recreate byte
 There is a fixed 10,000-attempt/profile metadata cap with no silent eviction;
 receipt metadata is outside the logical document-byte quota. Reconciliation of
 uncertain provider ingestion and attempt compaction remain manual/operator work.
+
+## Manual dev/alpha candidates
+
+Candidates are prepared artifacts, not published releases. See
+[candidate preparation and transfer](../../docs/prerelease-artifacts.md) for exact
+source receipts, pinned Node/npm and offline cache requirements. The CLI tarball
+requires external Effect 4.0.6 and is not self-contained. Before starting one, run
+`plansplease build-info` to inspect its source SHA, channel and version offline.
+A candidate refuses to reuse a profile daemon from a different build. Inspect
+`status --json`, then deliberately `stop` that profile before starting the new
+candidate. Existing preview links stop with that daemon; other profiles remain
+independent. Preparation does not publish, move tags or change local/cloud data.

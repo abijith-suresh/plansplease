@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -56,24 +56,25 @@ let dropResponse = false,
 let protocolSupported = true;
 const revoked = new Set();
 try {
-  const tarball =
-    process.env.TARBALL ??
-    join(
-      root,
-      npmPackFilename(
-        JSON.parse(
-          runNpm([
-            "pack",
-            "--workspace",
-            "@abijith-suresh/planview",
-            "--pack-destination",
-            root,
-            "--json",
-            ...(process.env.PLANVIEW_TEST_PACK_BUILT === "1" ? ["--ignore-scripts"] : []),
-          ])
+  const tarball = process.env.PLANVIEW_TEST_VERIFIED_CLI
+    ? undefined
+    : (process.env.TARBALL ??
+      join(
+        root,
+        npmPackFilename(
+          JSON.parse(
+            runNpm([
+              "pack",
+              "--workspace",
+              "@abijith-suresh/planview",
+              "--pack-destination",
+              root,
+              "--json",
+              ...(process.env.PLANVIEW_TEST_PACK_BUILT === "1" ? ["--ignore-scripts"] : []),
+            ])
+          )
         )
-      )
-    );
+      ));
   // Packing builds Core before these source-side fixture imports resolve it.
   const { resolveAppDataPaths } = await import("@planview/core");
   const { cliCredentialFromRequest, hashCliCredential } = await import(
@@ -87,8 +88,11 @@ try {
     "../apps/app/src/lib/upload-receipt-handler.ts"
   );
   const prefix = join(root, "installed prefix ü");
-  runNpm(["install", "--prefix", prefix, "--ignore-scripts", "--no-audit", "--no-fund", tarball]);
-  const cli = join(prefix, "node_modules/@abijith-suresh/planview/dist/index.js");
+  if (!process.env.PLANVIEW_TEST_VERIFIED_CLI)
+    runNpm(["install", "--prefix", prefix, "--ignore-scripts", "--no-audit", "--no-fund", tarball]);
+  const cli =
+    process.env.PLANVIEW_TEST_VERIFIED_CLI ??
+    join(prefix, "node_modules/@abijith-suresh/planview/dist/index.js");
   const f = await fixture({ after: (cleanup) => cleanups.push(cleanup) });
   const token = "planview_cli_installed-local-fixture";
   await f.database.transaction((ctx) =>

@@ -18,6 +18,7 @@ export const COMMANDS = [
   "ui",
   "profiles",
   "help",
+  "build-info",
 ] as const;
 
 export type Command = (typeof COMMANDS)[number];
@@ -43,6 +44,7 @@ Commands:
   clean                  Remove expired snapshots and reconcile storage
   profiles               Discover, inspect or deliberately create local profiles
   ui                     Start the local manager and print a one-use launch link
+  build-info             Print offline artifact/source identity as JSON
   help [command]         Show help for a command
 
 Global options:
@@ -60,6 +62,12 @@ Skills CLI installs to the project by default; add -g for optional user-wide ins
 `;
 
 const COMMAND_HELP: Record<HelpTopic, string> = {
+  "build-info": `Usage: plansplease build-info [--json]
+
+Print this CLI's version and optional dev/alpha source identity without starting
+a daemon, reading credentials or contacting the cloud. Stable/source builds have
+build=null. Candidate preparation does not publish or move tags.
+`,
   publish: `Usage: plansplease publish [options] <file|folder>
 
 Publish one immutable HTML snapshot and print its localhost URL.
