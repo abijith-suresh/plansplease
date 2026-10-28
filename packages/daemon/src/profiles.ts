@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { type Stats } from "node:fs";
 import { lstat, mkdir, opendir } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
@@ -104,9 +105,63 @@ const ownerFailureDetails = (error: unknown, stderr: unknown, started: number) =
     stage,
   });
 };
+const OWNER_PATH_STATES = [
+  "checking",
+  "acl_lookup_failed",
+  "owner_extraction_failed",
+  "owner_mismatch",
+  "match",
+];
+const OWNER_ERROR_CATEGORIES = [
+  "ObjectNotFound",
+  "PermissionDenied",
+  "InvalidArgument",
+  "InvalidData",
+  "InvalidOperation",
+  "SecurityError",
+  "NotImplemented",
+  "NotSpecified",
+  "ResourceUnavailable",
+  "ReadError",
+  "MetadataError",
+  "OpenError",
+  "ParserError",
+  "SyntaxError",
+  "LimitsExceeded",
+  "OperationStopped",
+];
+/** Numeric batch positions and fixed states only. Path digests never leave this comparison. */
+const ownerPathDetails = (stderr: unknown, paths: readonly string[]) => {
+  const results = paths.slice(0, 100).map((_, index) => ({
+    index,
+    state: "unknown",
+    category: "none",
+    pathMatches: null as boolean | null,
+  }));
+  for (const line of (typeof stderr === "string" ? stderr.slice(0, 64 * 1024) : "").split(
+    /\r?\n/
+  )) {
+    const match = /^PVOWNER:path:([0-9]{1,3}):(state|category|digest):([A-Za-z0-9_]+)$/.exec(line);
+    if (!match) continue;
+    const index = Number(match[1]);
+    const result = results[index];
+    if (!result) continue;
+    const value = match[3]!;
+    if (match[2] === "state" && OWNER_PATH_STATES.includes(value)) result.state = value;
+    if (match[2] === "category")
+      result.category = OWNER_ERROR_CATEGORIES.includes(value) ? value : "other";
+    if (match[2] === "digest" && /^[a-fA-F0-9]{64}$/.test(value))
+      result.pathMatches =
+        createHash("sha256").update(paths[index]!, "utf8").digest("hex") === value.toLowerCase();
+  }
+  return JSON.stringify(results);
+};
 // Node exposes no Windows file-owner SID. Query only ACL owner metadata in one
 // bounded, hidden native helper; it never reads profile files or starts services.
-const windowsOwners = async (paths: readonly string[]): Promise<readonly boolean[]> => {
+const windowsOwners = async (
+  paths: readonly string[],
+  report?: (safeDiagnostic: string) => void
+): Promise<readonly boolean[]> => {
   if (process.platform !== "win32" || paths.length === 0) return paths.map(() => true);
   // Preserve statement order and PowerShell error behavior while recording only
   // fixed stage labels. In particular, encoding setters still precede Stop.
@@ -123,7 +178,37 @@ $owners = @($identity.User.Value, $identity.Owner.Value)
 [Console]::Error.WriteLine('PVOWNER:stage:stdin')
 $paths = ConvertFrom-Json ([Console]::In.ReadToEnd())
 [Console]::Error.WriteLine('PVOWNER:stage:acl')
-$result = @($paths | ForEach-Object { try { $owners -contains (Get-Acl -LiteralPath $_ -ErrorAction Stop).GetOwner([System.Security.Principal.SecurityIdentifier]).Value } catch { $false } })
+$ownerBatchIndex = -1
+$result = @($paths | ForEach-Object {
+  $ownerBatchIndex++
+  $ownerPath = $_
+  # This independent diagnostic never changes the path or ownership decision.
+  try {
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $digest = [BitConverter]::ToString($hasher.ComputeHash([System.Text.Encoding]::UTF8.GetBytes([string]$ownerPath))).Replace('-', '').ToLowerInvariant()
+      [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':digest:' + $digest)
+    } finally { $hasher.Dispose() }
+  } catch { }
+  [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':state:checking')
+  $ownerPathStage = 'acl_lookup'
+  $ownerErrorCategory = 'none'
+  try {
+    $acl = Get-Acl -LiteralPath $ownerPath -ErrorAction Stop
+    $ownerPathStage = 'owner_extraction'
+    $ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    $ownerFlag = $owners -contains $ownerSid
+    if ($ownerFlag) { $ownerPathState = 'match' }
+    else { $ownerPathState = 'owner_mismatch' }
+  } catch {
+    $ownerPathState = $ownerPathStage + '_failed'
+    $ownerErrorCategory = $_.CategoryInfo.Category
+    $ownerFlag = $false
+  }
+  [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':state:' + $ownerPathState)
+  if ($ownerErrorCategory -ne 'none') { [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':category:' + $ownerErrorCategory) }
+  $ownerFlag
+})
 [Console]::Error.WriteLine('PVOWNER:stage:output')
 ConvertTo-Json -InputObject $result -Compress`;
 
@@ -135,7 +220,7 @@ ConvertTo-Json -InputObject $result -Compress`;
     "powershell.exe"
   );
   const started = performance.now();
-  const result = await new Promise<string>((accept, reject) => {
+  const result = await new Promise<{ output: string; diagnostic: string }>((accept, reject) => {
     const child = execFile(
       executable,
       [
@@ -154,17 +239,17 @@ ConvertTo-Json -InputObject $result -Compress`;
                   error,
                   stderr,
                   started
-                )}. Directories may already exist after creation; inspect them before retrying. Profile operations never start a daemon.`
+                )}. Safe path diagnostic: ${ownerPathDetails(stderr, paths)}. Directories may already exist after creation; inspect them before retrying. Profile operations never start a daemon.`
               )
             )
-          : accept(stdout)
+          : accept({ output: stdout, diagnostic: ownerPathDetails(stderr, paths) })
     );
     child.stdin?.on("error", () => {});
     child.stdin?.end(JSON.stringify(paths));
   });
   let flags: unknown;
   try {
-    flags = JSON.parse(result.replace(/^\uFEFF/, ""));
+    flags = JSON.parse(result.output.replace(/^\uFEFF/, ""));
   } catch {
     throw new Error("Invalid Windows profile ownership response.");
   }
@@ -174,6 +259,7 @@ ConvertTo-Json -InputObject $result -Compress`;
     flags.some((value) => typeof value !== "boolean")
   )
     throw new Error("Invalid Windows profile ownership response.");
+  report?.(result.diagnostic);
   return flags;
 };
 const canonical = (path: string) => normalizeMacosSystemPath(resolve(path));
@@ -269,8 +355,14 @@ export const createProfileOperations = (
       const observation = await directory(path, true);
       if (observation) existing.set(path, observation);
     }
-    if ((await windowsOwners([...existing.keys()])).some((flag) => !flag))
-      throw new Error("Profile roots must belong to the current Windows user or token owner.");
+    let ownerDiagnostic = "";
+    const ownerFlags = await windowsOwners([...existing.keys()], (value) => {
+      ownerDiagnostic = value;
+    });
+    if (ownerFlags.some((flag) => !flag))
+      throw new Error(
+        `Profile roots must belong to the current Windows user or token owner. Safe path diagnostic: ${ownerDiagnostic}`
+      );
     // The native ACL helper yields. Recheck the same directories before a caller
     // uses this location, including current-profile descriptor inspection.
     for (const [path, observation] of existing) await unchanged(path, observation);
