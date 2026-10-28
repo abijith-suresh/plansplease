@@ -1,0 +1,89 @@
+name: Prepare dev or alpha artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Candidate channel, without publication or tag movement
+        type: choice
+        options: [dev, alpha]
+        default: dev
+        required: true
+      publish:
+        description: Publication is disabled; true always refuses
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PLANVIEW_PRERELEASE_CHANNEL: ${{ inputs.channel }}
+      PLANVIEW_PRERELEASE_PUBLISH_REQUESTED: ${{ inputs.publish }}
+    steps:
+      - name: Refuse untrusted dispatch or any publication request
+        run: |
+          node -e 'if (process.env.GITHUB_EVENT_NAME !== "workflow_dispatch" || process.env.GITHUB_REPOSITORY !== "abijith-suresh/plansplease" || process.env.GITHUB_REF !== "refs/heads/main" || process.env.PLANVIEW_PRERELEASE_PUBLISH_REQUESTED !== "false") throw new Error("Preparation requires manual trusted main dispatch; publication is disabled.")'
+      - name: Checkout exact dispatch source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install pinned npm and warm the locked cache
+        run: |
+          npm install --global npm@11.16.0
+          npm ci --ignore-scripts
+      - name: Verify source, policy and packages
+        run: |
+          npm run verify
+          npm run changeset:status
+          npm run pack:check
+      - name: Install Chromium for candidate browser acceptance
+        run: npx playwright install --with-deps chromium
+      - name: Prepare one exact candidate and exercise installed native and browser flows
+        run: |
+          npm run prepare:prerelease -- --dispatch --browser --output "$RUNNER_TEMP/plansplease-prerelease" --channel "$PLANVIEW_PRERELEASE_CHANNEL" --source-sha "$GITHUB_SHA" --date "$(date -u +%Y%m%d)" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Retain the canonical Linux-built bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plansplease-${{ inputs.channel }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plansplease-prerelease/
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-windows:
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout exact dispatch source for verification scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install pinned npm and locked fixture dependencies
+        run: |
+          npm.cmd install --global npm@11.16.0
+          npm.cmd ci --ignore-scripts
+          npm.cmd run build --workspace @planview/local
+      - name: Download the canonical Linux bytes without rebuilding the candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plansplease-${{ inputs.channel }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plansplease-prerelease
+      - name: Verify hashes before candidate execution and test native installed flows
+        run: npm.cmd run check:prerelease -- --bundle "$env:RUNNER_TEMP/plansplease-prerelease" --expected-sha "$env:GITHUB_SHA"

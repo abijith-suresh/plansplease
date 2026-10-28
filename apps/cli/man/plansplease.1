@@ -237,3 +237,16 @@ exit 1 means failed, unknown, or local bookkeeping uncertain. JSON separates loc
 cloud, bookkeeping and recovery. Cloud refusal preserves local data, including
 local 10 MiB snapshots above the cloud 8 MiB limit. Local/cloud deletion is
 independent. Sharing does not pin or extend 30-day/1 GiB local retention.
+
+.SH BUILD IDENTITY
+.B build-info [--json]
+prints the installed version and candidate source SHA/channel as bounded JSON,
+without starting a daemon or reading cloud credentials. Regular packages report
+build: null. Candidates require the pinned Node/npm runtime and a prepared npm
+cache for external Effect 4.0.6; their tarball is not self-contained.
+.PP
+A candidate refuses to reuse a selected profile daemon from another build.
+Inspect status, then explicitly stop that owned profile before starting the new
+candidate. Stopping ends both preview and manager listeners and old preview
+links. Other profiles remain independent. Candidate preparation does not publish
+or move npm tags.

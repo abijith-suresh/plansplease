@@ -1,3 +1,4 @@
+export * from "./build-identity.js";
 export {
   BUNDLE_HEADER_BYTES,
   BUNDLE_MAGIC_BYTES,

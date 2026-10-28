@@ -181,3 +181,21 @@ needed. Stop each with `plansplease --profile NAME stop`. Fixed 30-day unpinned
 retention/1 GiB quota apply per profile. No profile delete, rename or purge exists.
 On Windows, profile ownership checks use a bounded hidden PowerShell ACL helper;
 if the OS policy blocks it, discovery fails closed without starting a service.
+
+## Candidate identity and lifecycle
+
+`plansplease build-info` prints bounded JSON offline with the installed version
+and candidate source SHA/channel, or `build: null` for a regular package. It does
+not read credentials or start a daemon. Dev/alpha candidates require the pinned
+Node/npm runtime and an npm cache containing external Effect 4.0.6; the CLI
+tarball is not a self-contained offline installer. Verify the approved bundle
+hashes and every packaged file with the repository's installation tooling before
+executing candidate code. Never infer publication from a candidate version.
+
+A candidate only starts or reuses a matching build in the selected profile.
+Inspect `plansplease --profile NAME status --json`; if another owned build is
+running, stop it deliberately before starting this candidate. Stopping ends its
+preview and manager listeners, including old preview links. It leaves other
+profiles running. Preparation never publishes, changes dist-tags, uploads data
+or changes retention/pins. Live account and laptop checks remain explicit owner
+work.

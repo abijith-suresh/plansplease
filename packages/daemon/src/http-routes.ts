@@ -1,3 +1,4 @@
+import type { BuildIdentity } from "@planview/core";
 import type { createDaemonSharing } from "./sharing.js";
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -55,6 +56,8 @@ type DaemonRouteDescriptor = Readonly<{
   readonly profile?: string;
   readonly secret: string;
   readonly startedAt: number;
+  readonly packageVersion?: string;
+  readonly build?: BuildIdentity;
 }>;
 
 export type DaemonStatusPayload = Readonly<{
@@ -64,6 +67,8 @@ export type DaemonStatusPayload = Readonly<{
   readonly host: string;
   readonly port: number;
   readonly startedAt: number;
+  readonly packageVersion?: string;
+  readonly build?: BuildIdentity;
 }>;
 
 type DocumentReadAdmission = Readonly<{
@@ -103,6 +108,9 @@ const htmlError = (_status: number, title: string, message: string) =>
 const statusPayload = (descriptor: DaemonRouteDescriptor) =>
   ({
     state: "running",
+    ...(descriptor.build === undefined || descriptor.packageVersion === undefined
+      ? {}
+      : { packageVersion: descriptor.packageVersion, build: descriptor.build }),
     profile: descriptor.profile ?? DEFAULT_PROFILE_NAME,
     pid: descriptor.pid,
     host: descriptor.host,

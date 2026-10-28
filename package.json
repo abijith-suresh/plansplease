@@ -41,7 +41,10 @@
     "local": "node scripts/local-dev.mjs",
     "local:reset": "node scripts/local-dev.mjs reset",
     "test:upload:installed": "node --experimental-strip-types scripts/upload-protocol-smoke.mjs",
-    "test:manager:browser": "npm run build --workspace @abijith-suresh/planview && node scripts/manager-browser-smoke.mjs"
+    "test:manager:browser": "npm run build --workspace @abijith-suresh/planview && node scripts/manager-browser-smoke.mjs",
+    "prepare:prerelease": "node scripts/prerelease.mjs",
+    "install:prerelease": "node scripts/install-prerelease.mjs",
+    "check:prerelease": "node scripts/check-prerelease.mjs"
   },
   "devDependencies": {
     "@astrojs/compiler": "2.13.1",

@@ -26,6 +26,16 @@ npm install --global --ignore-scripts ./FILE.tgz
 plansplease --version
 ```
 
+## Dev/alpha candidates
+
+Manual candidates are artifact bundles, without publication or npm tag movement.
+Use the [candidate preparation guide](../../reference/development/#manual-candidate-preparation)
+to verify the approved source, manifest and tarball hashes before installation or
+execution. They require a prepared npm cache for external Effect 4.0.6 and are not
+self-contained offline installers. `plansplease build-info` prints the installed
+source identity offline. A candidate refuses automatic reuse of another build's
+profile daemon; inspect and stop that profile explicitly before replacing it.
+
 ## Preview a page
 
 Save a file as `page.html`, then run:

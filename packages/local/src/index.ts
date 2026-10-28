@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
+import { DEFAULT_PROFILE_NAME, type DocumentId, type BuildIdentity } from "@planview/core";
 import {
   createProfileOperations,
   type ProfileCatalog,
@@ -80,6 +80,8 @@ export type LocalPublishedDocument = Readonly<{
 
 export type LocalDaemonRunningStatus = Readonly<{
   readonly state: "running";
+  readonly packageVersion?: string;
+  readonly build?: BuildIdentity;
   readonly profile: string;
   readonly pid: number;
   readonly host: string;
@@ -154,6 +156,8 @@ const localFailure = (operation: LocalOperation, cause: unknown) =>
   });
 
 const statusFromDescriptor = (descriptor: {
+  readonly packageVersion?: string;
+  readonly build?: BuildIdentity;
   readonly profile?: string;
   readonly pid: number;
   readonly host: string;
@@ -161,6 +165,9 @@ const statusFromDescriptor = (descriptor: {
   readonly startedAt: number;
 }): LocalDaemonRunningStatus => ({
   state: "running",
+  ...(descriptor.build === undefined
+    ? {}
+    : { packageVersion: descriptor.packageVersion, build: descriptor.build }),
   profile: descriptor.profile ?? DEFAULT_PROFILE_NAME,
   pid: descriptor.pid,
   host: descriptor.host,

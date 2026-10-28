@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Effect } from "effect";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { resolveAppDataPaths, normalizeMacosSystemPath } from "@planview/core";
+import { normalizeMacosSystemPath, resolveAppDataPaths } from "@planview/core";
+import { Effect } from "effect";
 import { chromium } from "playwright";
 import { npmPackFilename } from "./npm-pack-result.mjs";
 
@@ -59,30 +59,34 @@ const data = normalizeMacosSystemPath(
 let execute;
 let browser;
 try {
-  const tarball =
-    process.env.TARBALL ??
-    join(
-      fixture,
-      npmPackFilename(
-        JSON.parse(
-          command(npm, [
-            "pack",
-            "--workspace",
-            "@abijith-suresh/planview",
-            "--ignore-scripts",
-            "--pack-destination",
-            fixture,
-            "--json",
-          ])
+  const tarball = process.env.PLANVIEW_TEST_VERIFIED_CLI
+    ? undefined
+    : (process.env.TARBALL ??
+      join(
+        fixture,
+        npmPackFilename(
+          JSON.parse(
+            command(npm, [
+              "pack",
+              "--workspace",
+              "@abijith-suresh/planview",
+              "--ignore-scripts",
+              "--pack-destination",
+              fixture,
+              "--json",
+            ])
+          )
         )
-      )
+      ));
+  if (!process.env.PLANVIEW_TEST_VERIFIED_CLI)
+    command(npm, ["install", "--global", "--prefix", prefix, "--ignore-scripts", tarball]);
+  const installed =
+    process.env.PLANVIEW_TEST_VERIFIED_CLI ??
+    join(
+      prefix,
+      process.platform === "win32" ? "node_modules" : "lib/node_modules",
+      "@abijith-suresh/planview/dist/index.js"
     );
-  command(npm, ["install", "--global", "--prefix", prefix, "--ignore-scripts", tarball]);
-  const installed = join(
-    prefix,
-    process.platform === "win32" ? "node_modules" : "lib/node_modules",
-    "@abijith-suresh/planview/dist/index.js"
-  );
   execute = (...args) =>
     JSON.parse(
       command(process.execPath, [installed, ...args, "--json"], { cwd: fixture, env: environment })
@@ -337,7 +341,7 @@ try {
     cwd: fixture,
     env: environment,
   });
-  assert.equal(retrieved.status, 0);
+  assert.equal(retrieved.status, 0, retrieved.stderr?.toString().slice(0, 4096));
   assert.deepEqual(retrieved.stdout, original);
   assert.equal(await page.evaluate(() => window.artifactExecuted), undefined);
   assert.equal((await fetch(`${launch.origin}/${imported.id}`)).status, 404);

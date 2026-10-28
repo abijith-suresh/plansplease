@@ -1080,3 +1080,18 @@ test("ui help and malformed options leave both listeners stopped", async () => {
     await cleanup();
   }
 });
+
+test("build-info is bounded offline identity without resolving profile paths", () => {
+  const result = spawnSync(process.execPath, [cli, "build-info", "--json"], {
+    encoding: "utf8",
+    env: { ...process.env, PLANVIEW_APP_DATA_DIR: "invalid-relative-home" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    name: packageJson.name,
+    version: packageJson.version,
+    build: null,
+  });
+  assert.equal(result.stdout.length < 4096, true);
+  assert.equal(spawnSync(process.execPath, [cli, "build-info", "--unexpected"]).status, 1);
+});
