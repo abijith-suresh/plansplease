@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { type Stats } from "node:fs";
 import { lstat, mkdir, opendir } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
@@ -42,15 +41,27 @@ export type ProfilePlan = Readonly<{
   requiresCleanEnvironment: true;
   message: string;
 }>;
-const OWNER_STAGES = [
-  "start",
-  "input_encoding",
-  "output_encoding",
-  "identity",
-  "stdin",
-  "acl",
-  "output",
-];
+const OWNER_INPUT_LIMIT = 64 * 1024;
+const OWNER_STAGES = ["streams", "input", "identity", "acl", "output", "cleanup"];
+const ownerInput = (paths: readonly string[]) => {
+  if (paths.length < 1 || paths.length > 100)
+    throw new Error("Windows profile ownership supports one to 100 paths per batch.");
+  const lines: string[] = [];
+  let size = String(paths.length).length + 1;
+  for (const path of paths) {
+    if (typeof path !== "string" || !path || path.includes("\0"))
+      throw new Error("Invalid Windows profile ownership path.");
+    size += 4 * Math.ceil(Buffer.byteLength(path, "utf8") / 3) + 1;
+    if (size > OWNER_INPUT_LIMIT)
+      throw new Error("Windows profile ownership input exceeds the 64 KiB batch limit.");
+    const bytes = Buffer.from(path, "utf8");
+    if (bytes.toString("utf8") !== path)
+      throw new Error("Invalid Windows profile ownership path encoding.");
+    lines.push(bytes.toString("base64"));
+  }
+  const input = `${paths.length}\n${lines.join("\n")}\n`;
+  return input;
+};
 /** Fixed vocabulary only: never return subprocess messages, commands, input or raw stderr. */
 const ownerFailureDetails = (error: unknown, stderr: unknown, started: number) => {
   const fields = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
@@ -105,113 +116,84 @@ const ownerFailureDetails = (error: unknown, stderr: unknown, started: number) =
     stage,
   });
 };
-const OWNER_PATH_STATES = [
-  "checking",
-  "acl_lookup_failed",
-  "owner_extraction_failed",
-  "owner_mismatch",
-  "match",
-];
-const OWNER_ERROR_CATEGORIES = [
-  "ObjectNotFound",
-  "PermissionDenied",
-  "InvalidArgument",
-  "InvalidData",
-  "InvalidOperation",
-  "SecurityError",
-  "NotImplemented",
-  "NotSpecified",
-  "ResourceUnavailable",
-  "ReadError",
-  "MetadataError",
-  "OpenError",
-  "ParserError",
-  "SyntaxError",
-  "LimitsExceeded",
-  "OperationStopped",
-];
-/** Numeric batch positions and fixed states only. Path digests never leave this comparison. */
-const ownerPathDetails = (stderr: unknown, paths: readonly string[]) => {
-  const results = paths.slice(0, 100).map((_, index) => ({
-    index,
-    state: "unknown",
-    category: "none",
-    pathMatches: null as boolean | null,
-  }));
-  for (const line of (typeof stderr === "string" ? stderr.slice(0, 64 * 1024) : "").split(
-    /\r?\n/
-  )) {
-    const match = /^PVOWNER:path:([0-9]{1,3}):(state|category|digest):([A-Za-z0-9_]+)$/.exec(line);
-    if (!match) continue;
-    const index = Number(match[1]);
-    const result = results[index];
-    if (!result) continue;
-    const value = match[3]!;
-    if (match[2] === "state" && OWNER_PATH_STATES.includes(value)) result.state = value;
-    if (match[2] === "category")
-      result.category = OWNER_ERROR_CATEGORIES.includes(value) ? value : "other";
-    if (match[2] === "digest" && /^[a-fA-F0-9]{64}$/.test(value))
-      result.pathMatches =
-        createHash("sha256").update(paths[index]!, "utf8").digest("hex") === value.toLowerCase();
-  }
-  return JSON.stringify(results);
-};
-// Node exposes no Windows file-owner SID. Query only ACL owner metadata in one
-// bounded, hidden native helper; it never reads profile files or starts services.
-const windowsOwners = async (
-  paths: readonly string[],
-  report?: (safeDiagnostic: string) => void
-): Promise<readonly boolean[]> => {
+// Node exposes no Windows owner SID. Use only .NET filesystem/stream APIs in
+// one hidden WinPS 5.1 helper, with no module or Console text-wrapper bootstrap.
+const windowsOwners = async (paths: readonly string[]): Promise<readonly boolean[]> => {
   if (process.platform !== "win32" || paths.length === 0) return paths.map(() => true);
-  // Preserve statement order and PowerShell error behavior while recording only
-  // fixed stage labels. In particular, encoding setters still precede Stop.
+  const input = ownerInput(paths);
   const script = `
-[Console]::Error.WriteLine('PVOWNER:stage:start')
-[Console]::Error.WriteLine('PVOWNER:stage:input_encoding')
-[Console]::InputEncoding = New-Object System.Text.UTF8Encoding
-[Console]::Error.WriteLine('PVOWNER:stage:output_encoding')
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding
 $ErrorActionPreference = 'Stop'
-[Console]::Error.WriteLine('PVOWNER:stage:identity')
-$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$owners = @($identity.User.Value, $identity.Owner.Value)
-[Console]::Error.WriteLine('PVOWNER:stage:stdin')
-$paths = ConvertFrom-Json ([Console]::In.ReadToEnd())
-[Console]::Error.WriteLine('PVOWNER:stage:acl')
-$ownerBatchIndex = -1
-$result = @($paths | ForEach-Object {
-  $ownerBatchIndex++
-  $ownerPath = $_
-  # This independent diagnostic never changes the path or ownership decision.
-  try {
-    $hasher = [System.Security.Cryptography.SHA256]::Create()
-    try {
-      $digest = [BitConverter]::ToString($hasher.ComputeHash([System.Text.Encoding]::UTF8.GetBytes([string]$ownerPath))).Replace('-', '').ToLowerInvariant()
-      [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':digest:' + $digest)
-    } finally { $hasher.Dispose() }
-  } catch { }
-  [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':state:checking')
-  $ownerPathStage = 'acl_lookup'
-  $ownerErrorCategory = 'none'
-  try {
-    $acl = Get-Acl -LiteralPath $ownerPath -ErrorAction Stop
-    $ownerPathStage = 'owner_extraction'
-    $ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
-    $ownerFlag = $owners -contains $ownerSid
-    if ($ownerFlag) { $ownerPathState = 'match' }
-    else { $ownerPathState = 'owner_mismatch' }
-  } catch {
-    $ownerPathState = $ownerPathStage + '_failed'
-    $ownerErrorCategory = $_.CategoryInfo.Category
-    $ownerFlag = $false
+$standardInput = $null
+$standardOutput = $null
+$standardError = $null
+$identity = $null
+$completed = $false
+function Mark($stage) {
+  $marker = [System.Text.Encoding]::ASCII.GetBytes('PVOWNER:stage:' + $stage + [char]10)
+  $standardError.Write($marker, 0, $marker.Length)
+  $standardError.Flush()
+}
+try {
+  $standardError = [Console]::OpenStandardError()
+  Mark 'streams'
+  $standardInput = [Console]::OpenStandardInput()
+  $standardOutput = [Console]::OpenStandardOutput()
+  Mark 'input'
+  $buffer = [byte[]]::new(${OWNER_INPUT_LIMIT + 1})
+  $total = 0
+  while ($total -lt $buffer.Length) {
+    $read = $standardInput.Read($buffer, $total, $buffer.Length - $total)
+    if ($read -eq 0) { break }
+    $total += $read
   }
-  [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':state:' + $ownerPathState)
-  if ($ownerErrorCategory -ne 'none') { [Console]::Error.WriteLine('PVOWNER:path:' + $ownerBatchIndex + ':category:' + $ownerErrorCategory) }
-  $ownerFlag
-})
-[Console]::Error.WriteLine('PVOWNER:stage:output')
-ConvertTo-Json -InputObject $result -Compress`;
-
+  if ($total -gt ${OWNER_INPUT_LIMIT}) { throw [System.FormatException]::new() }
+  for ($i = 0; $i -lt $total; $i++) {
+    if ($buffer[$i] -gt 127) { throw [System.FormatException]::new() }
+  }
+  $lines = [System.Text.Encoding]::ASCII.GetString($buffer, 0, $total).Split([char]10)
+  if ($lines[0] -cnotmatch '^[1-9][0-9]{0,2}$') { throw [System.FormatException]::new() }
+  $count = [int]$lines[0]
+  if ($count -gt 100 -or $lines.Length -ne ($count + 2) -or $lines[$count + 1] -cne '') { throw [System.FormatException]::new() }
+  $decoded = [string[]]::new($count)
+  $utf8 = [System.Text.UTF8Encoding]::new($false, $true)
+  for ($i = 0; $i -lt $count; $i++) {
+    $encoded = $lines[$i + 1]
+    $bytes = [Convert]::FromBase64String($encoded)
+    if ([Convert]::ToBase64String($bytes) -cne $encoded) { throw [System.FormatException]::new() }
+    $path = $utf8.GetString($bytes)
+    if ($path.Length -eq 0 -or $path.IndexOf([char]0) -ge 0) { throw [System.FormatException]::new() }
+    $decoded[$i] = $path
+  }
+  Mark 'identity'
+  $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+  $owners = @($identity.User.Value, $identity.Owner.Value)
+  $flags = [string[]]::new($count)
+  Mark 'acl'
+  for ($i = 0; $i -lt $count; $i++) {
+    $accepted = $false
+    try {
+      $acl = [System.IO.Directory]::GetAccessControl($decoded[$i], [System.Security.AccessControl.AccessControlSections]::Owner)
+      $sid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+      $accepted = $owners -contains $sid
+    } catch { $accepted = $false }
+    if ($accepted) { $flags[$i] = 'true' } else { $flags[$i] = 'false' }
+  }
+  Mark 'output'
+  $response = [System.Text.Encoding]::ASCII.GetBytes('[' + [string]::Join(',', $flags) + ']')
+  $standardOutput.Write($response, 0, $response.Length)
+  $standardOutput.Flush()
+  Mark 'cleanup'
+  $completed = $true
+} catch { $completed = $false }
+finally {
+  foreach ($resource in @($identity, $standardInput, $standardOutput, $standardError)) {
+    if ($null -ne $resource) {
+      try { $resource.Dispose() } catch { $completed = $false }
+    }
+  }
+}
+if (-not $completed) { exit 1 }
+`;
   const executable = join(
     process.env["SystemRoot"] ?? "C:\\Windows",
     "System32",
@@ -220,56 +202,64 @@ ConvertTo-Json -InputObject $result -Compress`;
     "powershell.exe"
   );
   const started = performance.now();
-  const result = await new Promise<{ output: string; diagnostic: string }>((accept, reject) => {
-    const child = execFile(
-      executable,
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        Buffer.from(script, "utf16le").toString("base64"),
-      ],
-      {
-        // WinPS must construct its own module path when reached through Node
-        // from PowerShell 7. Leave the caller's environment unchanged.
-        env: Object.fromEntries(
-          Object.entries(process.env).filter(([name]) => name.toLowerCase() !== "psmodulepath")
-        ),
-        windowsHide: true,
-        timeout: 5000,
-        maxBuffer: 64 * 1024,
-        encoding: "utf8",
-      },
-      (error, stdout, stderr) =>
-        error
-          ? reject(
-              new Error(
-                `Could not verify Windows profile ownership with PowerShell. Safe diagnostic: ${ownerFailureDetails(
-                  error,
-                  stderr,
-                  started
-                )}. Safe path diagnostic: ${ownerPathDetails(stderr, paths)}. Directories may already exist after creation; inspect them before retrying. Profile operations never start a daemon.`
-              )
-            )
-          : accept({ output: stdout, diagnostic: ownerPathDetails(stderr, paths) })
+  const failure = (error: unknown, stderr: unknown) =>
+    new Error(
+      `Could not verify Windows profile ownership with PowerShell. Safe diagnostic: ${ownerFailureDetails(error, stderr, started)}. Directories may already exist after creation; inspect them before retrying. Profile operations never start a daemon.`
     );
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(JSON.stringify(paths));
+  const result = await new Promise<string>((accept, reject) => {
+    let inputFailed = false;
+    let child: ReturnType<typeof execFile> | undefined;
+    try {
+      child = execFile(
+        executable,
+        [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-EncodedCommand",
+          Buffer.from(script, "utf16le").toString("base64"),
+        ],
+        {
+          // Preserve the caller; WinPS constructs its own module search path.
+          env: Object.fromEntries(
+            Object.entries(process.env).filter(([name]) => name.toLowerCase() !== "psmodulepath")
+          ),
+          windowsHide: true,
+          timeout: 5000,
+          maxBuffer: 64 * 1024,
+          encoding: "utf8",
+        },
+        (error, stdout, stderr) => {
+          if (error) reject(failure(error, stderr));
+          else if (inputFailed)
+            reject(new Error("Could not send Windows profile ownership input."));
+          else accept(stdout);
+        }
+      );
+      if (!child.stdin) {
+        child.kill();
+        reject(new Error("Could not send Windows profile ownership input."));
+        return;
+      }
+      child.stdin.on("error", () => {
+        inputFailed = true;
+      });
+      child.stdin.end(input, "ascii");
+    } catch (error) {
+      try {
+        child?.kill();
+      } catch {
+        /* Keep subprocess details private. */
+      }
+      reject(failure(error, ""));
+    }
   });
-  let flags: unknown;
-  try {
-    flags = JSON.parse(result.output.replace(/^\uFEFF/, ""));
-  } catch {
+  // Only the complete canonical boolean array may authorize any path. Process
+  // failure is rejected above even if it left apparently valid partial output.
+  if (!/^\[(?:true|false)(?:,(?:true|false))*\]$/.test(result))
     throw new Error("Invalid Windows profile ownership response.");
-  }
-  if (
-    !Array.isArray(flags) ||
-    flags.length !== paths.length ||
-    flags.some((value) => typeof value !== "boolean")
-  )
-    throw new Error("Invalid Windows profile ownership response.");
-  report?.(result.diagnostic);
+  const flags = JSON.parse(result) as boolean[];
+  if (flags.length !== paths.length) throw new Error("Invalid Windows profile ownership response.");
   return flags;
 };
 const canonical = (path: string) => normalizeMacosSystemPath(resolve(path));
@@ -365,14 +355,8 @@ export const createProfileOperations = (
       const observation = await directory(path, true);
       if (observation) existing.set(path, observation);
     }
-    let ownerDiagnostic = "";
-    const ownerFlags = await windowsOwners([...existing.keys()], (value) => {
-      ownerDiagnostic = value;
-    });
-    if (ownerFlags.some((flag) => !flag))
-      throw new Error(
-        `Profile roots must belong to the current Windows user or token owner. Safe path diagnostic: ${ownerDiagnostic}`
-      );
+    if ((await windowsOwners([...existing.keys()])).some((flag) => !flag))
+      throw new Error("Profile roots must belong to the current Windows user or token owner.");
     // The native ACL helper yields. Recheck the same directories before a caller
     // uses this location, including current-profile descriptor inspection.
     for (const [path, observation] of existing) await unchanged(path, observation);

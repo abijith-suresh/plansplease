@@ -243,6 +243,17 @@ export async function testInstalledProfiles({ root, installed, workspace }) {
     const plannedResult = await planned.json();
     assert.equal(planned.status, 200, JSON.stringify(plannedResult).slice(0, 4096));
     assert.equal(plannedResult.target.name, "research");
+    const catalogResponse = await api(a.origin, tokenA, "profiles", { limit: 100 });
+    const catalog = await catalogResponse.json();
+    assert.equal(catalogResponse.status, 200, JSON.stringify(catalog).slice(0, 4096));
+    assert.equal(catalog.current.name, "default");
+    assert.equal(catalog.scope, "managed");
+    assert.deepEqual(catalog.profiles.map((profile) => profile.name).sort(), [
+      "default",
+      "research",
+    ]);
+    assert.ok(catalog.profiles.length <= 100);
+    assert.ok(catalog.scannedEntries <= 256);
     assert.equal(
       execute("research", "status").state,
       "stopped",
@@ -349,6 +360,8 @@ export async function testInstalledProfiles({ root, installed, workspace }) {
         profileProcessCounts: [0, 1, 1, 2, 1, 0],
         offlineListMilliseconds,
         boundedCatalogMilliseconds,
+        managerProfileList: true,
+        managerProfilePlan: true,
         sameIdIsolated: true,
         pinsAndReceiptsIsolated: true,
         independentPortsAndSessions: true,

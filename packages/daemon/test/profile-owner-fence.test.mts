@@ -22,7 +22,7 @@ for (const operation of ["list", "current", "plan"] as const)
       const helper = join(fixture, "helper.mjs");
       await writeFile(
         helper,
-        `import { rename, symlink } from 'node:fs/promises'; let calls=0; export function execFile(exe,args,options,callback) { return { stdin: { on(){}, end(payload){ void (async()=> { calls++; if(calls===${operation === "list" ? 2 : 1}) { await rename(${JSON.stringify(root)}, ${JSON.stringify(root + "-kept")}); await symlink(${JSON.stringify(outside)}, ${JSON.stringify(root)}, ${JSON.stringify(process.platform === "win32" ? "junction" : "dir")}); } callback(null,JSON.stringify(JSON.parse(payload).map(()=>true))); })().catch(error=>callback(error,'')); } } }; }`
+        `import { rename, symlink } from 'node:fs/promises'; let calls=0; export function execFile(exe,args,options,callback) { return { stdin: { on(){}, end(payload){ void (async()=> { calls++; if(calls===${operation === "list" ? 2 : 1}) { await rename(${JSON.stringify(root)}, ${JSON.stringify(root + "-kept")}); await symlink(${JSON.stringify(outside)}, ${JSON.stringify(root)}, ${JSON.stringify(process.platform === "win32" ? "junction" : "dir")}); } callback(null,JSON.stringify(Array(Number(payload.split(String.fromCharCode(10))[0])).fill(true))); })().catch(error=>callback(error,'')); } } }; }`
       );
       const sourcePath = fileURLToPath(new URL("../src/profiles.ts", import.meta.url));
       const corePath = fileURLToPath(new URL("../../core/dist/index.js", import.meta.url));
