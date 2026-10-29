@@ -557,3 +557,98 @@ main > .runtime {
   margin: 0 0 16px;
   padding: 14px 20px;
 }
+:root {
+  --control-border: #c8c8cd;
+  --control-radius: 5px;
+  --panel-radius: 8px;
+  --control-height: 36px;
+}
+button,
+.button,
+input[type="file"]::file-selector-button,
+.profile-picker input,
+.profile-picker select {
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  min-height: var(--control-height);
+  padding: 8px 12px;
+  font: inherit;
+}
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.row-actions button,
+.row-actions .button {
+  font-size: 14px;
+  padding: 8px 12px;
+}
+.collection,
+.import-panel,
+.storage-panel,
+.runtime,
+dialog {
+  border-radius: var(--panel-radius);
+}
+.snapshot-title {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+.snapshot-list {
+  margin-top: 16px;
+}
+.runtime {
+  display: block;
+}
+.runtime > summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+.runtime-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding-top: 12px;
+}
+.runtime-content > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.runtime .profile-controls {
+  margin-top: 0;
+}
+@media (max-width: 700px) {
+  :root {
+    --control-height: 44px;
+  }
+  .runtime-content {
+    flex-direction: column;
+  }
+}
+button,
+.button,
+input[type="file"]::file-selector-button {
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.row-actions button,
+.row-actions .button {
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.runtime > summary::before {
+  content: "▸";
+  margin-right: 8px;
+}
+.runtime[open] > summary::before {
+  content: "▾";
+}
+@media (max-width: 700px) {
+  .runtime > summary::before {
+    margin-right: 0;
+  }
+}

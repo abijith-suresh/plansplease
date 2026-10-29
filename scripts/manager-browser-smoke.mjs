@@ -169,11 +169,12 @@ try {
   }
   const { token } = await (await sessionResponse).json();
   await page.getByRole("heading", { name: "Local snapshots" }).waitFor();
-  await page.getByText("Snapshot " + published.id.slice(0, 7), { exact: true }).waitFor();
+  await page.getByText(published.id, { exact: true }).waitFor();
   assert.equal(page.url(), launch.origin + "/", "fragment is removed before requests");
   assert.deepEqual(await context.cookies(launch.origin), []);
   assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
   assert.equal(profileRequests, 0, "profile discovery is lazy until explicit panel expansion");
+  await page.getByText("Profile and session", { exact: true }).click();
   await page.getByText("Profiles & storage", { exact: true }).click();
   await page.getByLabel("New profile name", { exact: true }).waitFor();
   await page.getByLabel("New profile name", { exact: true }).fill("../outside");
@@ -338,6 +339,7 @@ try {
   assert.equal(execute("status").pid, running.pid, "stopping research leaves default alive");
   await assert.rejects(fetch(secondLaunch.origin, { signal: AbortSignal.timeout(1000) }));
   await page.getByText("Profiles & storage", { exact: true }).click();
+  await page.getByText("Profile and session", { exact: true }).click();
   const nativeSecret = JSON.parse(readFileSync(join(data, "runtime/daemon.json"), "utf8")).secret;
   const nativeWithBrowserSession = await fetch(`http://127.0.0.1:${port}/__planview/manager`, {
     method: "POST",
@@ -429,7 +431,7 @@ try {
     .getByLabel("Choose HTML file", { exact: true })
     .setInputFiles({ name: "report.html", mimeType: "text/html", buffer: original });
   await page.getByRole("button", { name: "Import snapshot", exact: true }).click();
-  await page.getByRole("status").filter({ hasText: "Saved" }).waitFor();
+  await page.getByRole("status").filter({ hasText: "Imported" }).waitFor();
   const imported = execute("list").snapshots.find((row) => row.id !== published.id);
   assert.ok(imported);
   const retrieved = spawnSync(process.execPath, [installed, "get", imported.id], {
@@ -500,6 +502,7 @@ try {
   if (artifacts)
     await second.screenshot({ path: join(artifacts, "session-error.png"), fullPage: true });
   await second.close();
+  await page.getByText("Profile and session", { exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Signed out" }).waitFor();
   assert.equal(
@@ -517,6 +520,7 @@ try {
     401
   );
   await page.goto(execute("ui").url);
+  await page.getByText("Profile and session", { exact: true }).click();
   await page.getByRole("button", { name: "Stop daemon & previews", exact: true }).waitFor();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Stop daemon & previews", exact: true }).click();
