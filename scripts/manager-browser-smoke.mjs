@@ -146,17 +146,35 @@ try {
     if (new URL(req.url()).pathname === "/api/profiles") profileRequests++;
   });
   page.on("pageerror", (error) => failures.push(error.message));
+  const captureDir = process.env.PLANVIEW_BROWSER_ARTIFACT_DIR;
+  let releaseSession;
+  const sessionGate = new Promise((resolve) => {
+    releaseSession = resolve;
+  });
+  if (captureDir) {
+    mkdirSync(captureDir, { recursive: true });
+    await page.route(`${launch.origin}/api/session`, async (route) => {
+      await sessionGate;
+      await route.continue();
+    });
+  }
   const sessionResponse = page.waitForResponse(
     (response) => response.url() === `${launch.origin}/api/session` && response.status() === 200
   );
   await page.goto(launch.url);
+  if (captureDir) {
+    await page.getByRole("heading", { name: "Connecting…" }).waitFor();
+    await page.screenshot({ path: join(captureDir, "loading.png") });
+    releaseSession();
+  }
   const { token } = await (await sessionResponse).json();
-  await page.getByRole("heading", { name: "Your local shelf." }).waitFor();
-  await page.getByText("Snapshot " + published.id.slice(0, 7), { exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Local snapshots" }).waitFor();
+  await page.getByText(published.id, { exact: true }).waitFor();
   assert.equal(page.url(), launch.origin + "/", "fragment is removed before requests");
   assert.deepEqual(await context.cookies(launch.origin), []);
   assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
   assert.equal(profileRequests, 0, "profile discovery is lazy until explicit panel expansion");
+  await page.getByText("Profile and session", { exact: true }).click();
   await page.getByText("Profiles & storage", { exact: true }).click();
   await page.getByLabel("New profile name", { exact: true }).waitFor();
   await page.getByLabel("New profile name", { exact: true }).fill("../outside");
@@ -180,6 +198,24 @@ try {
     execute("profiles", "list").profiles.some((profile) => profile.name === "research"),
     false
   );
+  if (process.env.PLANVIEW_TASTE_INSPECTOR) {
+    const inspectorLaunch = execute("ui");
+    const inspection = spawnSync(
+      process.execPath,
+      [
+        process.env.PLANVIEW_TASTE_INSPECTOR,
+        inspectorLaunch.url,
+        "--app",
+        "--out",
+        join(process.env.PLANVIEW_BROWSER_ARTIFACT_DIR, "taste-inspection"),
+      ],
+      { cwd: root, encoding: "utf8", timeout: 120000 }
+    );
+    writeFileSync(
+      join(process.env.PLANVIEW_BROWSER_ARTIFACT_DIR, "taste-inspector.log"),
+      `${inspection.stdout}\n${inspection.stderr}\nexit=${inspection.status}\n`
+    );
+  }
   const profileArtifacts = process.env.PLANVIEW_BROWSER_ARTIFACT_DIR;
   if (profileArtifacts) {
     mkdirSync(profileArtifacts, { recursive: true });
@@ -196,6 +232,45 @@ try {
     );
     await page.setViewportSize({ width: 1440, height: 1100 });
   }
+  if (profileArtifacts) {
+    for (const [width, height] of [
+      [1440, 900],
+      [1280, 800],
+      [768, 1024],
+      [390, 844],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        window.scrollTo(0, 0);
+      });
+      await page.waitForFunction(() => scrollY === 0);
+      assert.ok(await page.getByRole("link", { name: "plansplease local manager" }).isVisible());
+      await page.screenshot({ path: join(profileArtifacts, `profiles-${width}-viewport.png`) });
+      await page.screenshot({
+        path: join(profileArtifacts, `profiles-${width}-full.png`),
+        fullPage: true,
+      });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
+  if (profileArtifacts) {
+    await page
+      .getByLabel("New profile name", { exact: true })
+      .fill("profile-with-a-long-name-1234567");
+    await page.getByRole("button", { name: "Prepare launch command", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Selected profile launch" })
+      .getByText("Launch profile-with-a-long-name-1234567")
+      .waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: join(profileArtifacts, "long-profile-mobile.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   // This explicit native command is the host authorization, independent of A's session.
   const secondLaunch = execute("--profile", "research", "ui");
   const secondStatus = execute("--profile", "research", "status");
@@ -208,7 +283,9 @@ try {
   );
   await secondPage.goto(secondLaunch.url);
   const secondToken = (await (await secondSessionResponse).json()).token;
-  await secondPage.getByRole("heading", { name: "Your local shelf." }).waitFor();
+  await secondPage.getByRole("heading", { name: "Local snapshots" }).waitFor();
+  if (profileArtifacts)
+    await secondPage.screenshot({ path: join(profileArtifacts, "empty.png"), fullPage: true });
   assert.equal(
     (
       await fetch(`${secondLaunch.origin}/api/status`, {
@@ -237,6 +314,21 @@ try {
     ).status,
     401
   );
+  if (profileArtifacts) {
+    for (let index = 0; index < 12; index++) execute("--profile", "research", "publish", source);
+    await secondPage.getByRole("button", { name: "Refresh", exact: true }).click();
+    await secondPage.getByText("Snapshots 12").waitFor();
+    await secondPage.setViewportSize({ width: 390, height: 844 });
+    await secondPage.screenshot({
+      path: join(profileArtifacts, "dense-mobile.png"),
+      fullPage: true,
+    });
+    await secondPage.setViewportSize({ width: 1440, height: 900 });
+    await secondPage.screenshot({
+      path: join(profileArtifacts, "dense-desktop.png"),
+      fullPage: true,
+    });
+  }
   await secondPage.close();
   assert.equal(
     execute("--profile", "research", "status").pid,
@@ -247,6 +339,7 @@ try {
   assert.equal(execute("status").pid, running.pid, "stopping research leaves default alive");
   await assert.rejects(fetch(secondLaunch.origin, { signal: AbortSignal.timeout(1000) }));
   await page.getByText("Profiles & storage", { exact: true }).click();
+  await page.getByText("Profile and session", { exact: true }).click();
   const nativeSecret = JSON.parse(readFileSync(join(data, "runtime/daemon.json"), "utf8")).secret;
   const nativeWithBrowserSession = await fetch(`http://127.0.0.1:${port}/__planview/manager`, {
     method: "POST",
@@ -327,14 +420,18 @@ try {
   await popup.locator('body[data-manager-access="blocked"]').waitFor();
   assert.equal(new URL(popup.url()).port, String(port));
   await popup.close();
+  if (artifactsBeforeUnpin) {
+    await page.keyboard.press("Tab");
+    await page.screenshot({ path: join(artifactsBeforeUnpin, "keyboard-focus.png") });
+  }
   const original = Buffer.from(
     "\ufeff<!doctype html><h1>Browser import é</h1>\r\n<script>window.artifactExecuted=true</script>"
   );
   await page
     .getByLabel("Choose HTML file", { exact: true })
     .setInputFiles({ name: "report.html", mimeType: "text/html", buffer: original });
-  await page.getByRole("button", { name: "Save to local shelf", exact: true }).click();
-  await page.getByRole("status").filter({ hasText: "Saved" }).waitFor();
+  await page.getByRole("button", { name: "Import snapshot", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Imported" }).waitFor();
   const imported = execute("list").snapshots.find((row) => row.id !== published.id);
   assert.ok(imported);
   const retrieved = spawnSync(process.execPath, [installed, "get", imported.id], {
@@ -350,21 +447,62 @@ try {
     mkdirSync(artifacts, { recursive: true });
     await page.screenshot({ path: join(artifacts, "manager-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
+    const targetSizes = await page
+      .locator(".row-actions button, .row-actions a")
+      .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+    assert.ok(
+      targetSizes.every((height) => height >= 44),
+      `mobile actions too short: ${targetSizes}`
+    );
     await page.screenshot({ path: join(artifacts, "manager-mobile.png"), fullPage: true });
     assert.ok(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       "mobile page must not overflow horizontally"
     );
   }
+  if (artifacts) {
+    for (const [width, height] of [
+      [1440, 900],
+      [1280, 800],
+      [768, 1024],
+      [390, 844],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        window.scrollTo(0, 0);
+      });
+      await page.waitForFunction(() => scrollY === 0);
+      assert.ok(await page.getByRole("link", { name: "plansplease local manager" }).isVisible());
+      await page.screenshot({ path: join(artifacts, `inventory-${width}-viewport.png`) });
+      await page.screenshot({
+        path: join(artifacts, `inventory-${width}-full.png`),
+        fullPage: true,
+      });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.screenshot({ path: join(artifacts, "inventory-desktop-scrolled.png") });
+  }
   await page.getByRole("button", { name: `Delete ${imported.id}`, exact: true }).click();
   await page.getByRole("dialog").waitFor();
+  if (artifacts) {
+    await page.screenshot({ path: join(artifacts, "delete-dialog.png") });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: join(artifacts, "delete-dialog-mobile.png") });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   await page.getByRole("button", { name: "Delete local snapshot", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Local snapshot deleted" }).waitFor();
   assert.equal(execute("usage").documentCount, 1);
   const second = await context.newPage();
   await second.goto(launch.url);
   await second.getByRole("alert").filter({ hasText: "one-use launch link" }).waitFor();
+  if (artifacts)
+    await second.screenshot({ path: join(artifacts, "session-error.png"), fullPage: true });
   await second.close();
+  await page.getByText("Profile and session", { exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Signed out" }).waitFor();
   assert.equal(
@@ -382,6 +520,7 @@ try {
     401
   );
   await page.goto(execute("ui").url);
+  await page.getByText("Profile and session", { exact: true }).click();
   await page.getByRole("button", { name: "Stop daemon & previews", exact: true }).waitFor();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Stop daemon & previews", exact: true }).click();

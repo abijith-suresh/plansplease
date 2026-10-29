@@ -171,12 +171,12 @@ function Shelf() {
         setFile(undefined);
         fileInput.value = "";
         throw new Error(
-          `${describe(cause)} The import response was not confirmed. Refresh the shelf before selecting the file again.`
+          `${describe(cause)} The import response was not confirmed. Refresh the snapshot list before selecting the file again.`
         );
       }
       setFile(undefined);
       fileInput.value = "";
-      setNotice(`Saved ${result.id}. Open it from the shelf below.`);
+      setNotice(`Imported ${result.id}.`);
       await load(undefined);
     });
   const changePin = (snapshot: Snapshot) => {
@@ -216,7 +216,7 @@ function Shelf() {
         setNotice("Local snapshot deleted. Cloud copies are independent.");
       else
         setError(
-          `${result.status}: ${result.message ?? "The selected snapshot changed or is still being read."} Recovery: ${result.recovery}. ${result.recovery === "clean" ? `Run plansplease --profile ${status()?.profile ?? "default"} clean for bounded recovery.` : "Refresh the shelf before retrying."}`
+          `${result.status}: ${result.message ?? "The selected snapshot changed or is still being read."} Recovery: ${result.recovery}. ${result.recovery === "clean" ? `Run plansplease --profile ${status()?.profile ?? "default"} clean for bounded recovery.` : "Refresh the snapshot list before retrying."}`
         );
     });
   return (
@@ -226,26 +226,22 @@ function Shelf() {
           class="brand"
           href="/"
           onClick={(event) => event.preventDefault()}
-          aria-label="plansplease local shelf"
+          aria-label="plansplease local manager"
         >
-          <span class="brand-mark">p.</span> plansplease
+          plansplease
         </a>
         <span class="local-label">
-          <span class="dot" /> ON THIS COMPUTER
+          <span class="dot" /> Local manager
         </span>
       </header>
       <main>
         <div class="intro">
           <div>
-            <p class="eyebrow">A PLACE FOR YOUR WORK</p>
-            <h1>
-              Your local shelf<span>.</span>
-            </h1>
-            <p class="lede">Keep a moment. Open it again.</p>
+            <h1>Local snapshots</h1>
           </div>
           <div class="profile-label">
-            <span>SELECTED PROFILE</span>
-            <strong>{status()?.profile ?? "Connecting…"}</strong>
+            <span>Profile</span>
+            <strong>{status()?.profile ?? (busy() ? "Connecting…" : "Unavailable")}</strong>
           </div>
         </div>
         <Show when={error()}>
@@ -272,24 +268,216 @@ function Shelf() {
           fallback={
             <Show when={!stopped()}>
               <section class="empty">
-                <span class="section-number">LOCAL ACCESS</span>
-                <h2>{busy() ? "Opening your shelf…" : "A fresh link opens the door."}</h2>
-                <p>
-                  Run <code>plansplease --profile {status()?.profile ?? "NAME"} ui</code> in your
-                  terminal. Add <code>--open</code> to open it yourself.
-                </p>
-                <p class="muted">
-                  Browser access lasts up to 8 hours. Reloading requires a new link.
-                </p>
+                <h2>{busy() ? "Connecting…" : "Connect to the local manager"}</h2>
+                <Show when={!busy()}>
+                  <p>
+                    Run <code>plansplease --profile {status()?.profile ?? "NAME"} ui</code> in your
+                    terminal. Add <code>--open</code> to open it yourself.
+                  </p>
+                  <p class="muted">
+                    Browser access lasts up to 8 hours. Reloading requires a new link.
+                  </p>
+                </Show>
               </section>
             </Show>
           }
         >
+          <details class="runtime">
+            <summary>Profile and session</summary>
+            <div class="runtime-content">
+              <div>
+                <details
+                  class="profile-controls"
+                  onToggle={(event) => {
+                    if (event.currentTarget.open && !profiles()) void work(loadProfiles);
+                  }}
+                >
+                  <summary>Profiles &amp; storage</summary>
+                  <p>
+                    Each profile has separate storage, a process and a browser session. Preparing a
+                    command does not switch profiles or stop existing preview links.
+                  </p>
+                  <details class="advanced">
+                    <summary>Advanced details</summary>
+                    <p>
+                      Current process: {status()?.pid}. This manager can stop only{" "}
+                      {status()?.profile}.
+                    </p>
+                    <dl class="profile-facts">
+                      <div>
+                        <dt>Storage</dt>
+                        <dd>
+                          <code>{status()?.appDataDir}</code>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Preview origin</dt>
+                        <dd>
+                          <code>{status()?.previewOrigin}</code>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Manager origin</dt>
+                        <dd>
+                          <code>{status()?.managerOrigin}</code>
+                        </dd>
+                      </div>
+                    </dl>
+                    <p>
+                      Run commands without PLANVIEW_APP_DATA_DIR, PLANVIEW_DATA_DIR or
+                      PLANVIEW_RUNTIME_DIR overrides. Omit --open to print a link instead of opening
+                      a browser.
+                    </p>
+                  </details>
+                  <button
+                    type="button"
+                    class="quiet"
+                    disabled={busy()}
+                    onClick={() => void work(loadProfiles)}
+                  >
+                    Refresh profiles
+                  </button>
+                  <Show when={profilesError()}>
+                    <p role="alert">{profilesError()}</p>
+                  </Show>
+                  <Show when={profiles()?.scope === "isolated_override"}>
+                    <p class="fine-print">
+                      Custom storage/runtime override: only this location is shown. Use a terminal
+                      with the intended environment to discover or launch other profiles.
+                    </p>
+                  </Show>
+                  <Show when={profiles()?.scope === "managed"}>
+                    <label class="profile-picker">
+                      Choose a profile
+                      <select
+                        aria-label="Choose a profile"
+                        value={
+                          profiles()?.profiles.some((profile) => profile.name === profileName())
+                            ? profileName()
+                            : ""
+                        }
+                        onChange={(event) => {
+                          setProfileName(event.currentTarget.value);
+                          setProfilePlan(undefined);
+                        }}
+                        disabled={busy()}
+                      >
+                        <option value="">Select a profile</option>
+                        <For each={profiles()?.profiles ?? []}>
+                          {(profile) => (
+                            <option value={profile.name}>
+                              {profile.name}
+                              {profile.selected ? " · current" : ""}
+                              {profile.present ? "" : " · not created"}
+                            </option>
+                          )}
+                        </For>
+                      </select>
+                    </label>
+                    <label class="profile-picker">
+                      Or use a new name
+                      <input
+                        aria-label="New profile name"
+                        maxlength="32"
+                        value={profileName()}
+                        onInput={(event) => {
+                          setProfileName(event.currentTarget.value);
+                          setProfilePlan(undefined);
+                        }}
+                        placeholder="research"
+                        disabled={busy()}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      class="quiet"
+                      disabled={busy() || !profileName()}
+                      onClick={() =>
+                        void work(async () => {
+                          setProfilePlan(
+                            await request<ProfilePlan>("profile-plan", { name: profileName() })
+                          );
+                        })
+                      }
+                    >
+                      Prepare launch command
+                    </button>
+                    <Show when={profiles()?.limited}>
+                      <p class="fine-print">Partial list. Enter a known name directly.</p>
+                    </Show>
+                  </Show>
+                  <Show when={profilePlan()}>
+                    {(plan) => (
+                      <section class="profile-plan" aria-label="Selected profile launch">
+                        <h3>Launch {plan().target.name}</h3>
+
+                        <p>
+                          {plan().target.present
+                            ? "Existing profile."
+                            : "Created when the command runs."}{" "}
+                          Run this command in a terminal.
+                        </p>
+                        <code>{plan().openCommand}</code>
+                        <button
+                          type="button"
+                          class="quiet"
+                          onClick={() =>
+                            void work(async () => {
+                              await navigator.clipboard.writeText(plan().openCommand);
+                              setNotice("Command copied. This profile remains running.");
+                            })
+                          }
+                        >
+                          Copy profile launch command
+                        </button>
+                      </section>
+                    )}
+                  </Show>
+                </details>
+              </div>
+              <div class="runtime-actions">
+                <button
+                  type="button"
+                  class="quiet"
+                  disabled={busy()}
+                  onClick={() =>
+                    void work(async () => {
+                      await request("logout");
+                      token = undefined;
+                      setConnected(false);
+                      setNotice("Signed out of this browser session. Previews are still running.");
+                    })
+                  }
+                >
+                  Sign out
+                </button>
+                <button
+                  type="button"
+                  class="stop"
+                  disabled={busy()}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Stop this profile's daemon? Both the manager and all local preview links stop until the daemon starts again."
+                      )
+                    )
+                      void work(async () => {
+                        await request("stop");
+                        token = undefined;
+                        setConnected(false);
+                        setStopped(true);
+                      });
+                  }}
+                >
+                  Stop daemon &amp; previews
+                </button>
+              </div>
+            </div>
+          </details>
           <div class="desk">
             <section class="collection" aria-labelledby="snapshots-heading">
               <div class="section-heading">
                 <div>
-                  <p class="eyebrow">01 / COLLECTION</p>
                   <h2 id="snapshots-heading">
                     Snapshots <span class="count">{usage()?.documentCount ?? 0}</span>
                   </h2>
@@ -303,18 +491,13 @@ function Shelf() {
                   Refresh
                 </button>
               </div>
-              <p class="caption">
-                Pin a copy for offline use. Unpinned copies expire 30 days after last access.
-              </p>
+              <p class="caption">Unpinned snapshots expire 30 days after last access.</p>
               <Show
                 when={page().snapshots.length > 0}
                 fallback={
                   <div class="empty shelf-empty">
-                    <div class="file-outline" aria-hidden="true">
-                      +
-                    </div>
-                    <h3>Nothing on the shelf yet.</h3>
-                    <p>Bring in an HTML file, or publish from your terminal.</p>
+                    <h3>No snapshots yet.</h3>
+                    <p>Import an HTML file or publish from your terminal.</p>
                     <code>plansplease publish ./report.html</code>
                   </div>
                 }
@@ -323,9 +506,6 @@ function Shelf() {
                   <For each={page().snapshots}>
                     {(snapshot) => (
                       <li>
-                        <div class="snapshot-icon" aria-hidden="true">
-                          HTML
-                        </div>
                         <div class="snapshot-details">
                           <a
                             class="snapshot-title"
@@ -333,9 +513,8 @@ function Shelf() {
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            Snapshot {snapshot.id.slice(0, 7)}
+                            {snapshot.id}
                           </a>
-                          <code class="snapshot-id">{snapshot.id}</code>
                           <p>
                             {size(snapshot.size)} <span>·</span> Saved {date(snapshot.createdAt)}{" "}
                             <span>·</span>{" "}
@@ -377,7 +556,7 @@ function Shelf() {
                             aria-label={`${snapshot.pinned ? "Unpin" : "Pin"} ${snapshot.id}`}
                             onClick={() => changePin(snapshot)}
                           >
-                            {snapshot.pinned ? "Unpin" : "Pin for offline"}
+                            {snapshot.pinned ? "Unpin" : "Pin"}
                           </button>
                           <button
                             type="button"
@@ -394,35 +573,35 @@ function Shelf() {
                   </For>
                 </ol>
               </Show>
-              <div class="pagination">
-                <button
-                  type="button"
-                  class="quiet"
-                  disabled={busy() || cursor() === undefined}
-                  onClick={() => void work(() => load(undefined))}
-                >
-                  Back to first page
-                </button>
-                <span>Up to 50 per page</span>
-                <button
-                  type="button"
-                  class="quiet"
-                  disabled={busy() || !page().nextAfter}
-                  onClick={() => void work(() => load(page().nextAfter))}
-                >
-                  Next page →
-                </button>
-              </div>
+              <Show when={cursor() !== undefined || page().nextAfter}>
+                <div class="pagination">
+                  <Show when={cursor() !== undefined}>
+                    <button
+                      type="button"
+                      class="quiet"
+                      disabled={busy()}
+                      onClick={() => void work(() => load(undefined))}
+                    >
+                      Back to first page
+                    </button>
+                  </Show>
+                  <span>Up to 50 per page</span>
+                  <Show when={page().nextAfter}>
+                    <button
+                      type="button"
+                      class="quiet"
+                      disabled={busy()}
+                      onClick={() => void work(() => load(page().nextAfter))}
+                    >
+                      Next page →
+                    </button>
+                  </Show>
+                </div>
+              </Show>
             </section>
             <aside>
               <section class="import-panel" aria-labelledby="import-heading">
-                <p class="eyebrow">02 / BRING SOMETHING IN</p>
-                <h2 id="import-heading">Save an HTML file.</h2>
-                <p>
-                  A report, a diagram, a small idea.
-                  <br />
-                  We keep the exact bytes here.
-                </p>
+                <h2 id="import-heading">Import HTML</h2>
                 <label class="file-picker">
                   <span>
                     Choose HTML file <span aria-hidden="true">↗</span>
@@ -436,261 +615,52 @@ function Shelf() {
                     onChange={(event) => setFile(event.currentTarget.files?.[0])}
                   />
                 </label>
-                <Show when={file()}>
-                  <p class="chosen-file">
-                    {file()?.name} · {size(file()?.size ?? 0)}
-                  </p>
-                </Show>
                 <button
                   type="button"
                   class="primary"
                   disabled={busy() || !file()}
                   onClick={() => void importFile()}
                 >
-                  {busy() ? "Working…" : "Save to local shelf"}
+                  {busy() ? "Working…" : "Import snapshot"}
                 </button>
-                <p class="fine-print">
-                  Standalone HTML · up to 10 MiB
-                  <br />
-                  No cloud upload. Folders use the CLI.
-                </p>
+                <p class="fine-print">HTML up to 10 MiB. For folders, use the CLI.</p>
               </section>
               <section class="storage-panel" aria-labelledby="storage-heading">
-                <p class="eyebrow">03 / ROOM TO KEEP</p>
-                <h2 id="storage-heading">
+                <h2 id="storage-heading">Storage</h2>
+                <p class="storage-total">
                   {size(usage()?.bytes ?? 0)} <span>of 1 GiB</span>
-                </h2>
+                </p>
                 <progress
                   aria-label="Logical storage used"
                   max={usage()?.quotaBytes ?? 1}
                   value={usage()?.bytes ?? 0}
                 />
                 <p>
-                  Unpinned: 30 days since last access.
-                  <br />
-                  Pinned copies survive automatic cleanup and count toward this limit.
+                  Pinned ({usage()?.pinnedCount ?? 0}): {size(usage()?.pinnedBytes ?? 0)}
                 </p>
-                <dl>
-                  <div>
-                    <dt>Pinned ({usage()?.pinnedCount ?? 0})</dt>
-                    <dd>{size(usage()?.pinnedBytes ?? 0)}</dd>
-                  </div>
-                  <div>
-                    <dt>Snapshot bytes</dt>
-                    <dd>{size(usage()?.documentBytes ?? 0)}</dd>
-                  </div>
-                  <div>
-                    <dt>Metadata charge</dt>
-                    <dd>{size(usage()?.metadataBytes ?? 0)}</dd>
-                  </div>
-                </dl>
                 <p class="fine-print">
-                  Full quota can refuse new saves. Pins are never silently evicted. Pinning is not a
-                  backup. Temporary files and disk allocation are excluded.
+                  Pins prevent automatic cleanup, but are not backups. A full quota can prevent
+                  imports.
                 </p>
+                <details class="advanced">
+                  <summary>Storage details</summary>
+                  <dl>
+                    <div>
+                      <dt>Snapshot bytes</dt>
+                      <dd>{size(usage()?.documentBytes ?? 0)}</dd>
+                    </div>
+                    <div>
+                      <dt>Metadata charge</dt>
+                      <dd>{size(usage()?.metadataBytes ?? 0)}</dd>
+                    </div>
+                  </dl>
+                  <p>Temporary files and disk allocation are excluded.</p>
+                </details>
               </section>
             </aside>
           </div>
-          <section class="runtime">
-            <div>
-              <p class="eyebrow">LOCAL PREVIEWS, UNDER YOUR CONTROL</p>
-              <p>Preview links stay available after your terminal command exits.</p>
-              <details
-                class="profile-controls"
-                onToggle={(event) => {
-                  if (event.currentTarget.open && !profiles()) void work(loadProfiles);
-                }}
-              >
-                <summary>Profiles &amp; storage</summary>
-                <p>
-                  <strong>{status()?.profile}</strong> is running here, pid {status()?.pid}.
-                </p>
-                <dl class="profile-facts">
-                  <div>
-                    <dt>Storage</dt>
-                    <dd>
-                      <code>{status()?.appDataDir}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Preview origin</dt>
-                    <dd>
-                      <code>{status()?.previewOrigin}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Manager origin</dt>
-                    <dd>
-                      <code>{status()?.managerOrigin}</code>
-                    </dd>
-                  </div>
-                </dl>
-                <p>
-                  Every profile has its own storage, process and browser session. Leaving this page
-                  or preparing a selection keeps old preview links running. Stop each profile
-                  deliberately. This page can only stop <strong>{status()?.profile}</strong>.
-                </p>
-                <button
-                  type="button"
-                  class="quiet"
-                  disabled={busy()}
-                  onClick={() => void work(loadProfiles)}
-                >
-                  Refresh profiles
-                </button>
-                <Show when={profilesError()}>
-                  <p role="alert">{profilesError()}</p>
-                </Show>
-                <Show when={profiles()?.scope === "isolated_override"}>
-                  <p class="fine-print">
-                    Custom storage/runtime override: only this location is shown. Use a terminal
-                    with the intended environment to discover or launch other profiles.
-                  </p>
-                </Show>
-                <Show when={profiles()?.scope === "managed"}>
-                  <label class="profile-picker">
-                    Choose a profile
-                    <select
-                      aria-label="Choose a profile"
-                      value={
-                        profiles()?.profiles.some((profile) => profile.name === profileName())
-                          ? profileName()
-                          : ""
-                      }
-                      onChange={(event) => {
-                        setProfileName(event.currentTarget.value);
-                        setProfilePlan(undefined);
-                      }}
-                      disabled={busy()}
-                    >
-                      <option value="">Select a profile</option>
-                      <For each={profiles()?.profiles ?? []}>
-                        {(profile) => (
-                          <option value={profile.name}>
-                            {profile.name}
-                            {profile.selected ? " · current" : ""}
-                            {profile.present ? "" : " · not created"}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                  </label>
-                  <label class="profile-picker">
-                    Or use a new name
-                    <input
-                      aria-label="New profile name"
-                      maxlength="32"
-                      value={profileName()}
-                      onInput={(event) => {
-                        setProfileName(event.currentTarget.value);
-                        setProfilePlan(undefined);
-                      }}
-                      placeholder="research"
-                      disabled={busy()}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    class="quiet"
-                    disabled={busy() || !profileName()}
-                    onClick={() =>
-                      void work(async () => {
-                        setProfilePlan(
-                          await request<ProfilePlan>("profile-plan", { name: profileName() })
-                        );
-                      })
-                    }
-                  >
-                    Prepare launch command
-                  </button>
-                  <p class="fine-print">
-                    Offline directory metadata only. Other daemon states are not checked.{" "}
-                    {profiles()?.limited
-                      ? "Partial list: directory/count bound reached. Enter a known name directly."
-                      : ""}{" "}
-                    {profiles()?.skippedEntries ?? 0} unsupported entries excluded.
-                  </p>
-                </Show>
-                <Show when={profilePlan()}>
-                  {(plan) => (
-                    <section class="profile-plan" aria-label="Selected profile launch">
-                      <p class="eyebrow">PREPARED / {plan().target.name}</p>
-                      <p>{plan().message}</p>
-                      <p>
-                        {plan().target.present
-                          ? "Existing profile storage."
-                          : "The profile is created only when you run the command."}{" "}
-                        Run without PLANVIEW_APP_DATA_DIR, PLANVIEW_DATA_DIR or PLANVIEW_RUNTIME_DIR
-                        overrides.
-                      </p>
-                      <code>{plan().openCommand}</code>
-                      <button
-                        type="button"
-                        class="quiet"
-                        onClick={() =>
-                          void work(async () => {
-                            await navigator.clipboard.writeText(plan().openCommand);
-                            setNotice(
-                              "Profile launch command copied. Run it deliberately in your terminal. This profile remains running."
-                            );
-                          })
-                        }
-                      >
-                        Copy profile launch command
-                      </button>
-                      <p class="fine-print">
-                        Omit --open to print a one-use link without opening a browser. For offline
-                        directory creation alone: <code>{plan().createCommand}</code>.
-                      </p>
-                    </section>
-                  )}
-                </Show>
-              </details>
-            </div>
-            <div class="runtime-actions">
-              <button
-                type="button"
-                class="quiet"
-                disabled={busy()}
-                onClick={() =>
-                  void work(async () => {
-                    await request("logout");
-                    token = undefined;
-                    setConnected(false);
-                    setNotice("Signed out of this browser session. Previews are still running.");
-                  })
-                }
-              >
-                Sign out
-              </button>
-              <button
-                type="button"
-                class="stop"
-                disabled={busy()}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Stop this profile's daemon? Both the manager and all local preview links stop until the daemon starts again."
-                    )
-                  )
-                    void work(async () => {
-                      await request("stop");
-                      token = undefined;
-                      setConnected(false);
-                      setStopped(true);
-                    });
-                }}
-              >
-                Stop daemon &amp; previews
-              </button>
-            </div>
-          </section>
         </Show>
       </main>
-      <footer>
-        <span>plansplease / LOCAL EDITION</span>
-        <span>Your files. On your computer.</span>
-      </footer>
       <Show when={selected()}>
         {(snapshot) => (
           <DeleteDialog
@@ -721,15 +691,11 @@ function DeleteDialog(props: {
       }}
       aria-labelledby="delete-heading"
     >
-      <p class="eyebrow">SELECTED LOCAL COPY</p>
-      <h2 id="delete-heading">Take it off the shelf?</h2>
+      <h2 id="delete-heading">Delete local snapshot?</h2>
       <code>{props.snapshot.id}</code>
       <p>
         This removes one immutable local snapshot, including a pinned copy. Its preview link stops
         working. Any cloud copy is kept separately.
-      </p>
-      <p class="fine-print">
-        Active readers may keep it busy. You will see the result before retrying.
       </p>
       <div class="dialog-actions">
         <button type="button" class="quiet" disabled={props.busy} onClick={props.onCancel}>
