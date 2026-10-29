@@ -151,7 +151,7 @@ try {
   );
   await page.goto(launch.url);
   const { token } = await (await sessionResponse).json();
-  await page.getByRole("heading", { name: "Your local shelf." }).waitFor();
+  await page.getByRole("heading", { name: "Local snapshots" }).waitFor();
   await page.getByText("Snapshot " + published.id.slice(0, 7), { exact: true }).waitFor();
   assert.equal(page.url(), launch.origin + "/", "fragment is removed before requests");
   assert.deepEqual(await context.cookies(launch.origin), []);
@@ -196,6 +196,23 @@ try {
     );
     await page.setViewportSize({ width: 1440, height: 1100 });
   }
+  if (profileArtifacts) {
+    for (const [width, height] of [
+      [1440, 900],
+      [1280, 800],
+      [768, 1024],
+      [390, 844],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await page.screenshot({ path: join(profileArtifacts, `profiles-${width}-viewport.png`) });
+      await page.screenshot({
+        path: join(profileArtifacts, `profiles-${width}-full.png`),
+        fullPage: true,
+      });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   // This explicit native command is the host authorization, independent of A's session.
   const secondLaunch = execute("--profile", "research", "ui");
   const secondStatus = execute("--profile", "research", "status");
@@ -208,7 +225,9 @@ try {
   );
   await secondPage.goto(secondLaunch.url);
   const secondToken = (await (await secondSessionResponse).json()).token;
-  await secondPage.getByRole("heading", { name: "Your local shelf." }).waitFor();
+  await secondPage.getByRole("heading", { name: "Local snapshots" }).waitFor();
+  if (profileArtifacts)
+    await secondPage.screenshot({ path: join(profileArtifacts, "empty.png"), fullPage: true });
   assert.equal(
     (
       await fetch(`${secondLaunch.origin}/api/status`, {
@@ -333,7 +352,7 @@ try {
   await page
     .getByLabel("Choose HTML file", { exact: true })
     .setInputFiles({ name: "report.html", mimeType: "text/html", buffer: original });
-  await page.getByRole("button", { name: "Save to local shelf", exact: true }).click();
+  await page.getByRole("button", { name: "Import snapshot", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Saved" }).waitFor();
   const imported = execute("list").snapshots.find((row) => row.id !== published.id);
   assert.ok(imported);
@@ -356,14 +375,36 @@ try {
       "mobile page must not overflow horizontally"
     );
   }
+  if (artifacts) {
+    for (const [width, height] of [
+      [1440, 900],
+      [1280, 800],
+      [768, 1024],
+      [390, 844],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await page.screenshot({ path: join(artifacts, `inventory-${width}-viewport.png`) });
+      await page.screenshot({
+        path: join(artifacts, `inventory-${width}-full.png`),
+        fullPage: true,
+      });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.screenshot({ path: join(artifacts, "inventory-desktop-scrolled.png") });
+  }
   await page.getByRole("button", { name: `Delete ${imported.id}`, exact: true }).click();
   await page.getByRole("dialog").waitFor();
+  if (artifacts) await page.screenshot({ path: join(artifacts, "delete-dialog.png") });
   await page.getByRole("button", { name: "Delete local snapshot", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Local snapshot deleted" }).waitFor();
   assert.equal(execute("usage").documentCount, 1);
   const second = await context.newPage();
   await second.goto(launch.url);
   await second.getByRole("alert").filter({ hasText: "one-use launch link" }).waitFor();
+  if (artifacts)
+    await second.screenshot({ path: join(artifacts, "session-error.png"), fullPage: true });
   await second.close();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Signed out" }).waitFor();

@@ -171,12 +171,12 @@ function Shelf() {
         setFile(undefined);
         fileInput.value = "";
         throw new Error(
-          `${describe(cause)} The import response was not confirmed. Refresh the shelf before selecting the file again.`
+          `${describe(cause)} The import response was not confirmed. Refresh the snapshot list before selecting the file again.`
         );
       }
       setFile(undefined);
       fileInput.value = "";
-      setNotice(`Saved ${result.id}. Open it from the shelf below.`);
+      setNotice(`Saved ${result.id}. Open it from the snapshot list.`);
       await load(undefined);
     });
   const changePin = (snapshot: Snapshot) => {
@@ -216,7 +216,7 @@ function Shelf() {
         setNotice("Local snapshot deleted. Cloud copies are independent.");
       else
         setError(
-          `${result.status}: ${result.message ?? "The selected snapshot changed or is still being read."} Recovery: ${result.recovery}. ${result.recovery === "clean" ? `Run plansplease --profile ${status()?.profile ?? "default"} clean for bounded recovery.` : "Refresh the shelf before retrying."}`
+          `${result.status}: ${result.message ?? "The selected snapshot changed or is still being read."} Recovery: ${result.recovery}. ${result.recovery === "clean" ? `Run plansplease --profile ${status()?.profile ?? "default"} clean for bounded recovery.` : "Refresh the snapshot list before retrying."}`
         );
     });
   return (
@@ -226,26 +226,22 @@ function Shelf() {
           class="brand"
           href="/"
           onClick={(event) => event.preventDefault()}
-          aria-label="plansplease local shelf"
+          aria-label="plansplease local manager"
         >
-          <span class="brand-mark">p.</span> plansplease
+          plansplease
         </a>
         <span class="local-label">
-          <span class="dot" /> ON THIS COMPUTER
+          <span class="dot" /> Local manager
         </span>
       </header>
       <main>
         <div class="intro">
           <div>
-            <p class="eyebrow">A PLACE FOR YOUR WORK</p>
-            <h1>
-              Your local shelf<span>.</span>
-            </h1>
-            <p class="lede">Keep a moment. Open it again.</p>
+            <h1>Local snapshots</h1>
           </div>
           <div class="profile-label">
-            <span>SELECTED PROFILE</span>
-            <strong>{status()?.profile ?? "Connecting…"}</strong>
+            <span>Profile</span>
+            <strong>{status()?.profile ?? (busy() ? "Connecting…" : "Unavailable")}</strong>
           </div>
         </div>
         <Show when={error()}>
@@ -272,8 +268,7 @@ function Shelf() {
           fallback={
             <Show when={!stopped()}>
               <section class="empty">
-                <span class="section-number">LOCAL ACCESS</span>
-                <h2>{busy() ? "Opening your shelf…" : "A fresh link opens the door."}</h2>
+                <h2>{busy() ? "Connecting…" : "Connect to the local manager"}</h2>
                 <p>
                   Run <code>plansplease --profile {status()?.profile ?? "NAME"} ui</code> in your
                   terminal. Add <code>--open</code> to open it yourself.
@@ -289,7 +284,6 @@ function Shelf() {
             <section class="collection" aria-labelledby="snapshots-heading">
               <div class="section-heading">
                 <div>
-                  <p class="eyebrow">01 / COLLECTION</p>
                   <h2 id="snapshots-heading">
                     Snapshots <span class="count">{usage()?.documentCount ?? 0}</span>
                   </h2>
@@ -310,11 +304,8 @@ function Shelf() {
                 when={page().snapshots.length > 0}
                 fallback={
                   <div class="empty shelf-empty">
-                    <div class="file-outline" aria-hidden="true">
-                      +
-                    </div>
-                    <h3>Nothing on the shelf yet.</h3>
-                    <p>Bring in an HTML file, or publish from your terminal.</p>
+                    <h3>No snapshots yet.</h3>
+                    <p>Import an HTML file or publish from your terminal.</p>
                     <code>plansplease publish ./report.html</code>
                   </div>
                 }
@@ -323,9 +314,6 @@ function Shelf() {
                   <For each={page().snapshots}>
                     {(snapshot) => (
                       <li>
-                        <div class="snapshot-icon" aria-hidden="true">
-                          HTML
-                        </div>
                         <div class="snapshot-details">
                           <a
                             class="snapshot-title"
@@ -377,7 +365,7 @@ function Shelf() {
                             aria-label={`${snapshot.pinned ? "Unpin" : "Pin"} ${snapshot.id}`}
                             onClick={() => changePin(snapshot)}
                           >
-                            {snapshot.pinned ? "Unpin" : "Pin for offline"}
+                            {snapshot.pinned ? "Unpin" : "Pin"}
                           </button>
                           <button
                             type="button"
@@ -416,13 +404,8 @@ function Shelf() {
             </section>
             <aside>
               <section class="import-panel" aria-labelledby="import-heading">
-                <p class="eyebrow">02 / BRING SOMETHING IN</p>
-                <h2 id="import-heading">Save an HTML file.</h2>
-                <p>
-                  A report, a diagram, a small idea.
-                  <br />
-                  We keep the exact bytes here.
-                </p>
+                <h2 id="import-heading">Import HTML</h2>
+                <p>Save a standalone HTML file as a local snapshot.</p>
                 <label class="file-picker">
                   <span>
                     Choose HTML file <span aria-hidden="true">↗</span>
@@ -447,7 +430,7 @@ function Shelf() {
                   disabled={busy() || !file()}
                   onClick={() => void importFile()}
                 >
-                  {busy() ? "Working…" : "Save to local shelf"}
+                  {busy() ? "Working…" : "Import snapshot"}
                 </button>
                 <p class="fine-print">
                   Standalone HTML · up to 10 MiB
@@ -456,10 +439,10 @@ function Shelf() {
                 </p>
               </section>
               <section class="storage-panel" aria-labelledby="storage-heading">
-                <p class="eyebrow">03 / ROOM TO KEEP</p>
-                <h2 id="storage-heading">
+                <h2 id="storage-heading">Storage</h2>
+                <p class="storage-total">
                   {size(usage()?.bytes ?? 0)} <span>of 1 GiB</span>
-                </h2>
+                </p>
                 <progress
                   aria-label="Logical storage used"
                   max={usage()?.quotaBytes ?? 1}
@@ -493,7 +476,7 @@ function Shelf() {
           </div>
           <section class="runtime">
             <div>
-              <p class="eyebrow">LOCAL PREVIEWS, UNDER YOUR CONTROL</p>
+              <h2>Profile and session</h2>
               <p>Preview links stay available after your terminal command exits.</p>
               <details
                 class="profile-controls"
@@ -614,7 +597,7 @@ function Shelf() {
                 <Show when={profilePlan()}>
                   {(plan) => (
                     <section class="profile-plan" aria-label="Selected profile launch">
-                      <p class="eyebrow">PREPARED / {plan().target.name}</p>
+                      <h3>Launch {plan().target.name}</h3>
                       <p>{plan().message}</p>
                       <p>
                         {plan().target.present
@@ -687,10 +670,6 @@ function Shelf() {
           </section>
         </Show>
       </main>
-      <footer>
-        <span>plansplease / LOCAL EDITION</span>
-        <span>Your files. On your computer.</span>
-      </footer>
       <Show when={selected()}>
         {(snapshot) => (
           <DeleteDialog
@@ -721,8 +700,7 @@ function DeleteDialog(props: {
       }}
       aria-labelledby="delete-heading"
     >
-      <p class="eyebrow">SELECTED LOCAL COPY</p>
-      <h2 id="delete-heading">Take it off the shelf?</h2>
+      <h2 id="delete-heading">Delete local snapshot?</h2>
       <code>{props.snapshot.id}</code>
       <p>
         This removes one immutable local snapshot, including a pinned copy. Its preview link stops
