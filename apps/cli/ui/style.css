@@ -519,3 +519,41 @@ dialog p {
     width: 100%;
   }
 }
+.collection .runtime {
+  margin: 20px 0 0;
+  padding: 18px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.advanced {
+  margin: 12px 0;
+}
+@media (max-width: 700px) {
+  button,
+  .button,
+  select,
+  input[type="file"]::file-selector-button,
+  summary {
+    min-height: 44px;
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  summary::before {
+    content: "▸";
+  }
+  details[open] > summary::before {
+    content: "▾";
+  }
+  .row-actions button,
+  .row-actions .button {
+    min-height: 44px;
+  }
+}
+main > .runtime {
+  margin: 0 0 16px;
+  padding: 14px 20px;
+}

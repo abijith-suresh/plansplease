@@ -146,10 +146,27 @@ try {
     if (new URL(req.url()).pathname === "/api/profiles") profileRequests++;
   });
   page.on("pageerror", (error) => failures.push(error.message));
+  const captureDir = process.env.PLANVIEW_BROWSER_ARTIFACT_DIR;
+  let releaseSession;
+  const sessionGate = new Promise((resolve) => {
+    releaseSession = resolve;
+  });
+  if (captureDir) {
+    mkdirSync(captureDir, { recursive: true });
+    await page.route(`${launch.origin}/api/session`, async (route) => {
+      await sessionGate;
+      await route.continue();
+    });
+  }
   const sessionResponse = page.waitForResponse(
     (response) => response.url() === `${launch.origin}/api/session` && response.status() === 200
   );
   await page.goto(launch.url);
+  if (captureDir) {
+    await page.getByRole("heading", { name: "Connecting…" }).waitFor();
+    await page.screenshot({ path: join(captureDir, "loading.png") });
+    releaseSession();
+  }
   const { token } = await (await sessionResponse).json();
   await page.getByRole("heading", { name: "Local snapshots" }).waitFor();
   await page.getByText("Snapshot " + published.id.slice(0, 7), { exact: true }).waitFor();
@@ -180,6 +197,24 @@ try {
     execute("profiles", "list").profiles.some((profile) => profile.name === "research"),
     false
   );
+  if (process.env.PLANVIEW_TASTE_INSPECTOR) {
+    const inspectorLaunch = execute("ui");
+    const inspection = spawnSync(
+      process.execPath,
+      [
+        process.env.PLANVIEW_TASTE_INSPECTOR,
+        inspectorLaunch.url,
+        "--app",
+        "--out",
+        join(process.env.PLANVIEW_BROWSER_ARTIFACT_DIR, "taste-inspection"),
+      ],
+      { cwd: root, encoding: "utf8", timeout: 120000 }
+    );
+    writeFileSync(
+      join(process.env.PLANVIEW_BROWSER_ARTIFACT_DIR, "taste-inspector.log"),
+      `${inspection.stdout}\n${inspection.stderr}\nexit=${inspection.status}\n`
+    );
+  }
   const profileArtifacts = process.env.PLANVIEW_BROWSER_ARTIFACT_DIR;
   if (profileArtifacts) {
     mkdirSync(profileArtifacts, { recursive: true });
@@ -204,6 +239,12 @@ try {
       [390, 844],
     ]) {
       await page.setViewportSize({ width, height });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        window.scrollTo(0, 0);
+      });
+      await page.waitForFunction(() => scrollY === 0);
+      assert.ok(await page.getByRole("link", { name: "plansplease local manager" }).isVisible());
       await page.screenshot({ path: join(profileArtifacts, `profiles-${width}-viewport.png`) });
       await page.screenshot({
         path: join(profileArtifacts, `profiles-${width}-full.png`),
@@ -211,6 +252,22 @@ try {
       });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
+  if (profileArtifacts) {
+    await page
+      .getByLabel("New profile name", { exact: true })
+      .fill("profile-with-a-long-name-1234567");
+    await page.getByRole("button", { name: "Prepare launch command", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Selected profile launch" })
+      .getByText("Launch profile-with-a-long-name-1234567")
+      .waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: join(profileArtifacts, "long-profile-mobile.png"),
+      fullPage: true,
+    });
     await page.setViewportSize({ width: 1440, height: 900 });
   }
   // This explicit native command is the host authorization, independent of A's session.
@@ -256,6 +313,21 @@ try {
     ).status,
     401
   );
+  if (profileArtifacts) {
+    for (let index = 0; index < 12; index++) execute("--profile", "research", "publish", source);
+    await secondPage.getByRole("button", { name: "Refresh", exact: true }).click();
+    await secondPage.getByText("Snapshots 12").waitFor();
+    await secondPage.setViewportSize({ width: 390, height: 844 });
+    await secondPage.screenshot({
+      path: join(profileArtifacts, "dense-mobile.png"),
+      fullPage: true,
+    });
+    await secondPage.setViewportSize({ width: 1440, height: 900 });
+    await secondPage.screenshot({
+      path: join(profileArtifacts, "dense-desktop.png"),
+      fullPage: true,
+    });
+  }
   await secondPage.close();
   assert.equal(
     execute("--profile", "research", "status").pid,
@@ -346,6 +418,10 @@ try {
   await popup.locator('body[data-manager-access="blocked"]').waitFor();
   assert.equal(new URL(popup.url()).port, String(port));
   await popup.close();
+  if (artifactsBeforeUnpin) {
+    await page.keyboard.press("Tab");
+    await page.screenshot({ path: join(artifactsBeforeUnpin, "keyboard-focus.png") });
+  }
   const original = Buffer.from(
     "\ufeff<!doctype html><h1>Browser import é</h1>\r\n<script>window.artifactExecuted=true</script>"
   );
@@ -369,6 +445,13 @@ try {
     mkdirSync(artifacts, { recursive: true });
     await page.screenshot({ path: join(artifacts, "manager-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
+    const targetSizes = await page
+      .locator(".row-actions button, .row-actions a")
+      .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+    assert.ok(
+      targetSizes.every((height) => height >= 44),
+      `mobile actions too short: ${targetSizes}`
+    );
     await page.screenshot({ path: join(artifacts, "manager-mobile.png"), fullPage: true });
     assert.ok(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -383,6 +466,12 @@ try {
       [390, 844],
     ]) {
       await page.setViewportSize({ width, height });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        window.scrollTo(0, 0);
+      });
+      await page.waitForFunction(() => scrollY === 0);
+      assert.ok(await page.getByRole("link", { name: "plansplease local manager" }).isVisible());
       await page.screenshot({ path: join(artifacts, `inventory-${width}-viewport.png`) });
       await page.screenshot({
         path: join(artifacts, `inventory-${width}-full.png`),
@@ -396,7 +485,12 @@ try {
   }
   await page.getByRole("button", { name: `Delete ${imported.id}`, exact: true }).click();
   await page.getByRole("dialog").waitFor();
-  if (artifacts) await page.screenshot({ path: join(artifacts, "delete-dialog.png") });
+  if (artifacts) {
+    await page.screenshot({ path: join(artifacts, "delete-dialog.png") });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: join(artifacts, "delete-dialog-mobile.png") });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   await page.getByRole("button", { name: "Delete local snapshot", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Local snapshot deleted" }).waitFor();
   assert.equal(execute("usage").documentCount, 1);

@@ -269,17 +269,216 @@ function Shelf() {
             <Show when={!stopped()}>
               <section class="empty">
                 <h2>{busy() ? "Connecting…" : "Connect to the local manager"}</h2>
-                <p>
-                  Run <code>plansplease --profile {status()?.profile ?? "NAME"} ui</code> in your
-                  terminal. Add <code>--open</code> to open it yourself.
-                </p>
-                <p class="muted">
-                  Browser access lasts up to 8 hours. Reloading requires a new link.
-                </p>
+                <Show when={!busy()}>
+                  <p>
+                    Run <code>plansplease --profile {status()?.profile ?? "NAME"} ui</code> in your
+                    terminal. Add <code>--open</code> to open it yourself.
+                  </p>
+                  <p class="muted">
+                    Browser access lasts up to 8 hours. Reloading requires a new link.
+                  </p>
+                </Show>
               </section>
             </Show>
           }
         >
+          <section class="runtime">
+            <div>
+              <h2>Profile and session</h2>
+
+              <details
+                class="profile-controls"
+                onToggle={(event) => {
+                  if (event.currentTarget.open && !profiles()) void work(loadProfiles);
+                }}
+              >
+                <summary>Profiles &amp; storage</summary>
+                <p>
+                  Each profile has separate storage, a process and a browser session. Preparing a
+                  command does not switch profiles or stop existing preview links.
+                </p>
+                <details class="advanced">
+                  <summary>Advanced details</summary>
+                  <p>
+                    Current process: {status()?.pid}. This manager can stop only {status()?.profile}
+                    .
+                  </p>
+                  <dl class="profile-facts">
+                    <div>
+                      <dt>Storage</dt>
+                      <dd>
+                        <code>{status()?.appDataDir}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Preview origin</dt>
+                      <dd>
+                        <code>{status()?.previewOrigin}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Manager origin</dt>
+                      <dd>
+                        <code>{status()?.managerOrigin}</code>
+                      </dd>
+                    </div>
+                  </dl>
+                  <p>
+                    Run commands without PLANVIEW_APP_DATA_DIR, PLANVIEW_DATA_DIR or
+                    PLANVIEW_RUNTIME_DIR overrides. Omit --open to print a link instead of opening a
+                    browser.
+                  </p>
+                </details>
+                <button
+                  type="button"
+                  class="quiet"
+                  disabled={busy()}
+                  onClick={() => void work(loadProfiles)}
+                >
+                  Refresh profiles
+                </button>
+                <Show when={profilesError()}>
+                  <p role="alert">{profilesError()}</p>
+                </Show>
+                <Show when={profiles()?.scope === "isolated_override"}>
+                  <p class="fine-print">
+                    Custom storage/runtime override: only this location is shown. Use a terminal
+                    with the intended environment to discover or launch other profiles.
+                  </p>
+                </Show>
+                <Show when={profiles()?.scope === "managed"}>
+                  <label class="profile-picker">
+                    Choose a profile
+                    <select
+                      aria-label="Choose a profile"
+                      value={
+                        profiles()?.profiles.some((profile) => profile.name === profileName())
+                          ? profileName()
+                          : ""
+                      }
+                      onChange={(event) => {
+                        setProfileName(event.currentTarget.value);
+                        setProfilePlan(undefined);
+                      }}
+                      disabled={busy()}
+                    >
+                      <option value="">Select a profile</option>
+                      <For each={profiles()?.profiles ?? []}>
+                        {(profile) => (
+                          <option value={profile.name}>
+                            {profile.name}
+                            {profile.selected ? " · current" : ""}
+                            {profile.present ? "" : " · not created"}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                  <label class="profile-picker">
+                    Or use a new name
+                    <input
+                      aria-label="New profile name"
+                      maxlength="32"
+                      value={profileName()}
+                      onInput={(event) => {
+                        setProfileName(event.currentTarget.value);
+                        setProfilePlan(undefined);
+                      }}
+                      placeholder="research"
+                      disabled={busy()}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="quiet"
+                    disabled={busy() || !profileName()}
+                    onClick={() =>
+                      void work(async () => {
+                        setProfilePlan(
+                          await request<ProfilePlan>("profile-plan", { name: profileName() })
+                        );
+                      })
+                    }
+                  >
+                    Prepare launch command
+                  </button>
+                  <p class="fine-print">
+                    Offline directory metadata only. Other daemon states are not checked.{" "}
+                    {profiles()?.limited
+                      ? "Partial list: directory/count bound reached. Enter a known name directly."
+                      : ""}{" "}
+                    {profiles()?.skippedEntries ?? 0} unsupported entries excluded.
+                  </p>
+                </Show>
+                <Show when={profilePlan()}>
+                  {(plan) => (
+                    <section class="profile-plan" aria-label="Selected profile launch">
+                      <h3>Launch {plan().target.name}</h3>
+
+                      <p>
+                        {plan().target.present
+                          ? "Existing profile."
+                          : "Created when the command runs."}{" "}
+                        Run this command in a terminal.
+                      </p>
+                      <code>{plan().openCommand}</code>
+                      <button
+                        type="button"
+                        class="quiet"
+                        onClick={() =>
+                          void work(async () => {
+                            await navigator.clipboard.writeText(plan().openCommand);
+                            setNotice(
+                              "Profile launch command copied. Run it deliberately in your terminal. This profile remains running."
+                            );
+                          })
+                        }
+                      >
+                        Copy profile launch command
+                      </button>
+                    </section>
+                  )}
+                </Show>
+              </details>
+            </div>
+            <div class="runtime-actions">
+              <button
+                type="button"
+                class="quiet"
+                disabled={busy()}
+                onClick={() =>
+                  void work(async () => {
+                    await request("logout");
+                    token = undefined;
+                    setConnected(false);
+                    setNotice("Signed out of this browser session. Previews are still running.");
+                  })
+                }
+              >
+                Sign out
+              </button>
+              <button
+                type="button"
+                class="stop"
+                disabled={busy()}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Stop this profile's daemon? Both the manager and all local preview links stop until the daemon starts again."
+                    )
+                  )
+                    void work(async () => {
+                      await request("stop");
+                      token = undefined;
+                      setConnected(false);
+                      setStopped(true);
+                    });
+                }}
+              >
+                Stop daemon &amp; previews
+              </button>
+            </div>
+          </section>
           <div class="desk">
             <section class="collection" aria-labelledby="snapshots-heading">
               <div class="section-heading">
@@ -382,25 +581,31 @@ function Shelf() {
                   </For>
                 </ol>
               </Show>
-              <div class="pagination">
-                <button
-                  type="button"
-                  class="quiet"
-                  disabled={busy() || cursor() === undefined}
-                  onClick={() => void work(() => load(undefined))}
-                >
-                  Back to first page
-                </button>
-                <span>Up to 50 per page</span>
-                <button
-                  type="button"
-                  class="quiet"
-                  disabled={busy() || !page().nextAfter}
-                  onClick={() => void work(() => load(page().nextAfter))}
-                >
-                  Next page →
-                </button>
-              </div>
+              <Show when={cursor() !== undefined || page().nextAfter}>
+                <div class="pagination">
+                  <Show when={cursor() !== undefined}>
+                    <button
+                      type="button"
+                      class="quiet"
+                      disabled={busy()}
+                      onClick={() => void work(() => load(undefined))}
+                    >
+                      Back to first page
+                    </button>
+                  </Show>
+                  <span>Up to 50 per page</span>
+                  <Show when={page().nextAfter}>
+                    <button
+                      type="button"
+                      class="quiet"
+                      disabled={busy()}
+                      onClick={() => void work(() => load(page().nextAfter))}
+                    >
+                      Next page →
+                    </button>
+                  </Show>
+                </div>
+              </Show>
             </section>
             <aside>
               <section class="import-panel" aria-labelledby="import-heading">
@@ -474,200 +679,6 @@ function Shelf() {
               </section>
             </aside>
           </div>
-          <section class="runtime">
-            <div>
-              <h2>Profile and session</h2>
-              <p>Preview links stay available after your terminal command exits.</p>
-              <details
-                class="profile-controls"
-                onToggle={(event) => {
-                  if (event.currentTarget.open && !profiles()) void work(loadProfiles);
-                }}
-              >
-                <summary>Profiles &amp; storage</summary>
-                <p>
-                  <strong>{status()?.profile}</strong> is running here, pid {status()?.pid}.
-                </p>
-                <dl class="profile-facts">
-                  <div>
-                    <dt>Storage</dt>
-                    <dd>
-                      <code>{status()?.appDataDir}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Preview origin</dt>
-                    <dd>
-                      <code>{status()?.previewOrigin}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Manager origin</dt>
-                    <dd>
-                      <code>{status()?.managerOrigin}</code>
-                    </dd>
-                  </div>
-                </dl>
-                <p>
-                  Every profile has its own storage, process and browser session. Leaving this page
-                  or preparing a selection keeps old preview links running. Stop each profile
-                  deliberately. This page can only stop <strong>{status()?.profile}</strong>.
-                </p>
-                <button
-                  type="button"
-                  class="quiet"
-                  disabled={busy()}
-                  onClick={() => void work(loadProfiles)}
-                >
-                  Refresh profiles
-                </button>
-                <Show when={profilesError()}>
-                  <p role="alert">{profilesError()}</p>
-                </Show>
-                <Show when={profiles()?.scope === "isolated_override"}>
-                  <p class="fine-print">
-                    Custom storage/runtime override: only this location is shown. Use a terminal
-                    with the intended environment to discover or launch other profiles.
-                  </p>
-                </Show>
-                <Show when={profiles()?.scope === "managed"}>
-                  <label class="profile-picker">
-                    Choose a profile
-                    <select
-                      aria-label="Choose a profile"
-                      value={
-                        profiles()?.profiles.some((profile) => profile.name === profileName())
-                          ? profileName()
-                          : ""
-                      }
-                      onChange={(event) => {
-                        setProfileName(event.currentTarget.value);
-                        setProfilePlan(undefined);
-                      }}
-                      disabled={busy()}
-                    >
-                      <option value="">Select a profile</option>
-                      <For each={profiles()?.profiles ?? []}>
-                        {(profile) => (
-                          <option value={profile.name}>
-                            {profile.name}
-                            {profile.selected ? " · current" : ""}
-                            {profile.present ? "" : " · not created"}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                  </label>
-                  <label class="profile-picker">
-                    Or use a new name
-                    <input
-                      aria-label="New profile name"
-                      maxlength="32"
-                      value={profileName()}
-                      onInput={(event) => {
-                        setProfileName(event.currentTarget.value);
-                        setProfilePlan(undefined);
-                      }}
-                      placeholder="research"
-                      disabled={busy()}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    class="quiet"
-                    disabled={busy() || !profileName()}
-                    onClick={() =>
-                      void work(async () => {
-                        setProfilePlan(
-                          await request<ProfilePlan>("profile-plan", { name: profileName() })
-                        );
-                      })
-                    }
-                  >
-                    Prepare launch command
-                  </button>
-                  <p class="fine-print">
-                    Offline directory metadata only. Other daemon states are not checked.{" "}
-                    {profiles()?.limited
-                      ? "Partial list: directory/count bound reached. Enter a known name directly."
-                      : ""}{" "}
-                    {profiles()?.skippedEntries ?? 0} unsupported entries excluded.
-                  </p>
-                </Show>
-                <Show when={profilePlan()}>
-                  {(plan) => (
-                    <section class="profile-plan" aria-label="Selected profile launch">
-                      <h3>Launch {plan().target.name}</h3>
-                      <p>{plan().message}</p>
-                      <p>
-                        {plan().target.present
-                          ? "Existing profile storage."
-                          : "The profile is created only when you run the command."}{" "}
-                        Run without PLANVIEW_APP_DATA_DIR, PLANVIEW_DATA_DIR or PLANVIEW_RUNTIME_DIR
-                        overrides.
-                      </p>
-                      <code>{plan().openCommand}</code>
-                      <button
-                        type="button"
-                        class="quiet"
-                        onClick={() =>
-                          void work(async () => {
-                            await navigator.clipboard.writeText(plan().openCommand);
-                            setNotice(
-                              "Profile launch command copied. Run it deliberately in your terminal. This profile remains running."
-                            );
-                          })
-                        }
-                      >
-                        Copy profile launch command
-                      </button>
-                      <p class="fine-print">
-                        Omit --open to print a one-use link without opening a browser. For offline
-                        directory creation alone: <code>{plan().createCommand}</code>.
-                      </p>
-                    </section>
-                  )}
-                </Show>
-              </details>
-            </div>
-            <div class="runtime-actions">
-              <button
-                type="button"
-                class="quiet"
-                disabled={busy()}
-                onClick={() =>
-                  void work(async () => {
-                    await request("logout");
-                    token = undefined;
-                    setConnected(false);
-                    setNotice("Signed out of this browser session. Previews are still running.");
-                  })
-                }
-              >
-                Sign out
-              </button>
-              <button
-                type="button"
-                class="stop"
-                disabled={busy()}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Stop this profile's daemon? Both the manager and all local preview links stop until the daemon starts again."
-                    )
-                  )
-                    void work(async () => {
-                      await request("stop");
-                      token = undefined;
-                      setConnected(false);
-                      setStopped(true);
-                    });
-                }}
-              >
-                Stop daemon &amp; previews
-              </button>
-            </div>
-          </section>
         </Show>
       </main>
       <Show when={selected()}>
