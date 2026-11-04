@@ -1,0 +1,15 @@
+name: Dependency review
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  dependency-review:
+    name: dependency-review
+    permissions:
+      contents: read
+    uses: abijith-suresh/workflows/.github/workflows/dependency-review.yml@c299f85c6c0c73fff9b2a1e420484f5bdb482ff1 # v0.9.0
